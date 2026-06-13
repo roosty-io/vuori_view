@@ -1,0 +1,173 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Surfaces */
+  --canvas: #f5f1e8;
+  --surface: #fbfaf7;
+  --surface-2: #efe7da;
+  --border: #ddd3c3;
+  --border-strong: #ccbfa9;
+
+  /* Text */
+  --ink: #25231f;
+  --ink-secondary: #6d675e;
+  --ink-muted: #8a8175;
+
+  /* Accents */
+  --sage: #6f7f64;
+  --sage-soft: #e7ebe1;
+  --sage-deep: #54624b;
+  --ocean: #6f8a91;
+  --ocean-soft: #e3eaec;
+  --clay: #b87955;
+  --clay-soft: #f0e2d8;
+
+  /* Status */
+  --positive: #5e7d5a;
+  --warning: #c59a4a;
+  --negative: #b46a5d;
+  --info: #6f8a91;
+
+  color-scheme: light;
+}
+
+* {
+  border-color: var(--border);
+}
+
+html {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  margin: 0;
+  background-color: var(--canvas);
+  color: var(--ink);
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* Tabular numerals for all data figures */
+.tabular {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* Editorial serif display */
+.font-display {
+  font-family: "Cormorant Garamond", ui-serif, Georgia, serif;
+  letter-spacing: -0.01em;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+  border: 3px solid var(--canvas);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--ink-muted);
+}
+
+/* Focus ring */
+:focus-visible {
+  outline: 2px solid var(--sage);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Recharts polish */
+.recharts-cartesian-axis-tick-value {
+  font-size: 11px;
+  fill: var(--ink-muted);
+}
+.recharts-default-tooltip {
+  border-radius: 12px !important;
+  border: 1px solid var(--border) !important;
+  box-shadow: 0 12px 40px rgba(37, 35, 31, 0.12) !important;
+}
+.recharts-surface {
+  overflow: visible;
+}
+
+/* Hide scrollbar utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Grid line subtlety */
+.recharts-cartesian-grid line {
+  stroke: var(--border);
+  opacity: 0.55;
+}
+
+/* Animated counter feel */
+@keyframes count-pop {
+  0% {
+    opacity: 0.4;
+    transform: translateY(2px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Print styles for Executive Brief */
+@media print {
+  @page {
+    margin: 14mm;
+    size: A4;
+  }
+  body {
+    background: #ffffff !important;
+  }
+  .no-print,
+  .no-print * {
+    display: none !important;
+  }
+  .print-full {
+    position: static !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    box-shadow: none !important;
+  }
+  .print-break-avoid {
+    break-inside: avoid;
+  }
+  .print-surface {
+    box-shadow: none !important;
+    border: 1px solid #ddd3c3 !important;
+  }
+}
+
+/* Subtle texture for hero panels */
+.hero-grain {
+  background-image: radial-gradient(
+      circle at 1px 1px,
+      rgba(37, 35, 31, 0.04) 1px,
+      transparent 0
+    );
+  background-size: 22px 22px;
+}
