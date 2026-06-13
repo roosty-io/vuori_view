@@ -34,6 +34,10 @@ const TRIGGERS: Trigger[] = [
   { trigger: "Browsing from a cold-weather market", action: "Prioritize layers & outerwear modules", channel: "Onsite", impact: "+$160K / mo", confidence: 76, owner: "Ecommerce / Merch", signals: "Geo, weather index, category views" },
   { trigger: "High activity in Austin market", action: "Invite to local pop-up + early access", channel: "Email · SMS", impact: "+$95K / mo", confidence: 82, owner: "Retail / Growth", signals: "Market, session depth, event RSVP propensity" },
   { trigger: "Gift buyer from November cohort", action: "Holiday gift-guide flow + reorder nudge", channel: "Email", impact: "+$130K / mo", confidence: 74, owner: "Lifecycle CRM", signals: "Seasonal purchase pattern, AOV, low self-purchase" },
+  { trigger: "Waitlisted size back in stock", action: "Back-in-stock SMS within 24h of replenishment", channel: "SMS", impact: "+$210K / mo", confidence: 84, owner: "Lifecycle CRM", signals: "Waitlist/back-in-stock signup, size, market, inventory feed" },
+  { trigger: "Cold front in a cold-weather market", action: "Weather-triggered layering & recovery creative", channel: "Email · Paid Social", impact: "+$120K / mo", confidence: 76, owner: "Growth / Lifecycle", signals: "Weather feed, market, category affinity, season" },
+  { trigger: "Attended a creator/community event", action: "Curated landing-page follow-up + first-purchase incentive", channel: "Email · SMS", impact: "+$160K / mo", confidence: 80, owner: "Growth / Retail", signals: "Event RSVP, QR scan, persona, market" },
+  { trigger: "High-quality prospect (CQS > 80)", action: "Margin-aware personalization + early access (suppress discounting)", channel: "Onsite · Email", impact: "+$140K / mo", confidence: 78, owner: "Growth / Analytics", signals: "Customer Quality Score, promo dependency, predicted LTV" },
 ];
 
 const CHANNEL_ICON: Record<string, React.ComponentType<{ className?: string }>> = {

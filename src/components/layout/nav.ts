@@ -1,4 +1,5 @@
 import {
+  Beaker,
   Brain,
   CalendarRange,
   Compass,
@@ -65,8 +66,9 @@ export const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: "AI & Strategy",
+    label: "Testing & AI",
     items: [
+      { path: "/experimentation", label: "Experimentation Command Center", short: "Experimentation", icon: Beaker, tier1: true },
       { path: "/ai-registry", label: "AI Opportunity Registry", short: "AI Registry", icon: Brain, tier1: true },
       { path: "/ai-workbench", label: "AI Analytics Workbench", short: "AI Workbench", icon: FlaskConical },
       { path: "/growth-impact", label: "Growth Impact Lab", short: "Growth Impact", icon: Sprout, tier1: true },

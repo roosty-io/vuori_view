@@ -13,6 +13,7 @@ import { MarketingEfficiency } from "./pages/MarketingEfficiency";
 import { ExternalDemandRadar } from "./pages/ExternalDemandRadar";
 import { Merchandising } from "./pages/Merchandising";
 import { ConversionFunnel } from "./pages/ConversionFunnel";
+import { ExperimentationCommandCenter } from "./pages/ExperimentationCommandCenter";
 import { AIOpportunityRegistry } from "./pages/AIOpportunityRegistry";
 import { AIWorkbench } from "./pages/AIWorkbench";
 import { GrowthImpactLab } from "./pages/GrowthImpactLab";
@@ -36,6 +37,7 @@ export function App() {
             <Route path="/external-demand" element={<ExternalDemandRadar />} />
             <Route path="/merchandising" element={<Merchandising />} />
             <Route path="/conversion-funnel" element={<ConversionFunnel />} />
+            <Route path="/experimentation" element={<ExperimentationCommandCenter />} />
             <Route path="/ai-registry" element={<AIOpportunityRegistry />} />
             <Route path="/ai-workbench" element={<AIWorkbench />} />
             <Route path="/growth-impact" element={<GrowthImpactLab />} />

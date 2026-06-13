@@ -102,6 +102,12 @@ export interface Customer {
   preferredActivities: string[];
   promoSensitivity: number; // 0..1
   returnRisk: number; // 0..1
+  customerQualityScore: number; // 0..100
+  repeatProbability: number; // 0..1
+  categoryExpansionPotential: number; // 0..100
+  promoDependency: number; // 0..1
+  marginContribution: number; // 0..1
+  timeToSecondPurchasePrediction: number; // days
 }
 
 export interface SessionRow {
@@ -248,6 +254,10 @@ export interface MarketSignal {
   lat: number;
   lng: number;
   revenueRank: number;
+  customerQualityScore: number; // 0..100
+  communityCommerceOpportunity: number; // 0..100
+  incrementalityReadiness: number; // 0..100
+  recommendedControlMarkets: string[];
 }
 
 export type EventType =
@@ -302,6 +312,14 @@ export interface Persona {
   cac: number;
   repeatRate: number;
   emoji: string;
+  // Customer quality
+  customerQualityScore: number; // 0..100
+  repeatProbability: number; // 0..1
+  categoryExpansionPotential: number; // 0..100
+  promoDependency: number; // 0..1
+  marginContribution: number; // 0..1
+  timeToSecondPurchasePrediction: number; // days
+  returnRisk: number; // 0..1
 }
 
 export interface VisitorSignal {
@@ -445,6 +463,9 @@ export interface ChannelSummary {
   paybackMonths: number;
   marginalRoas: number;
   qualityScore: number;
+  customerQualityScore: number; // 0..100
+  returnAdjustedRoas: number;
+  incrementalShare: number; // 0..1 of attributed revenue that is incremental
 }
 
 export interface CohortRow {
@@ -481,12 +502,19 @@ export interface GrowthInitiative {
 // ── Community Commerce (creators, ambassadors, affiliates, activations) ──────
 
 export type PartnerType =
-  | "Creator"
-  | "Ambassador"
-  | "Affiliate"
-  | "Local Partner"
   | "Run Club"
-  | "Recovery Studio";
+  | "Recovery Studio"
+  | "Pilates Studio"
+  | "Yoga Instructor"
+  | "Local Trainer"
+  | "Outdoor Community"
+  | "Wellness Creator"
+  | "Resort / Hotel Partner"
+  | "Ambassador"
+  | "Affiliate Creator"
+  | "Creator"
+  | "Local Partner"
+  | "Affiliate";
 
 export type PartnerStatus = "Top Performer" | "Active" | "In Test" | "Proposed" | "Paused";
 
@@ -504,6 +532,11 @@ export interface CreatorPartner {
   contentType: string;
   eventAssociated: string;
   status: PartnerStatus;
+  expectedCustomerQualityScore: number; // 0..100
+  averageOrderValue: number;
+  returnRisk: number; // 0..1
+  projectedLtv: number;
+  incrementalLiftEstimate: number; // 0..1
   // Derived performance
   attributedRevenue: number;
   newCustomers: number;
@@ -537,11 +570,13 @@ export interface ActivationLandingPage {
   commissionPayout: number;
   marginAfterCommission: number;
   returnRate: number;
+  returnAdjustedRevenue: number;
   haloRevenue30d: number;
   haloRevenue60d: number;
   haloRevenue90d: number;
   incrementalRevenueEstimate: number;
   cannibalizedRevenueEstimate: number;
+  customerQualityScore: number; // 0..100
   // Derived display
   roi: number;
   confidence: number;
@@ -558,5 +593,284 @@ export interface CommissionScenario {
   creatorPayout: number;
   newCustomers: number;
   projectedLtv: number;
+  customerQualityScore: number;
+  returnAdjustedMargin: number;
   recommendation: string;
+}
+
+// ── Experimentation & incrementality ────────────────────────────────────────
+export type ExperimentStatus =
+  | "Proposed"
+  | "Designing"
+  | "Running"
+  | "Reading Results"
+  | "Scale"
+  | "Iterate"
+  | "Stop"
+  | "Needs More Data";
+
+export type TestType =
+  | "A/B Test"
+  | "Geo Holdout"
+  | "Matched Market Test"
+  | "Incrementality Test"
+  | "Lifecycle Holdout"
+  | "Landing Page Test"
+  | "Media Mix Test"
+  | "Product Launch Read"
+  | "PDP Optimization Test";
+
+export interface Experiment {
+  experimentId: string;
+  name: string;
+  businessQuestion: string;
+  hypothesis: string;
+  owner: string;
+  domain: string;
+  status: ExperimentStatus;
+  startDate: string;
+  endDate: string;
+  testType: TestType;
+  testMarket: string;
+  controlMarkets: string[];
+  audience: string;
+  primaryKpi: string;
+  secondaryKpis: string[];
+  baseline: string;
+  testResult: string;
+  lift: number; // %
+  confidence: number; // 0..100
+  incrementalRevenue: number;
+  marginImpact: number;
+  customerQualityImpact: number; // delta points
+  decision: string;
+  nextStep: string;
+  relatedRecommendationId?: string;
+  relatedUseCaseId?: string;
+}
+
+export interface IncrementalityTest {
+  testId: string;
+  name: string;
+  testType: TestType;
+  testMarket: string;
+  controlMarkets: string[];
+  marketSimilarityScore: number; // 0..100
+  startDate: string;
+  endDate: string;
+  baselineRevenue: number;
+  expectedLift: number; // %
+  actualLift: number | null; // %
+  incrementalRevenue: number;
+  attributedRevenue: number;
+  cannibalizedRevenue: number;
+  confidence: number;
+  minimumDetectableEffect: number; // %
+  recommendedDuration: number; // weeks
+  decisionRule: string;
+  status: ExperimentStatus;
+  owner: string;
+  similarityFactors: { factor: string; score: number }[];
+}
+
+// ── Back-in-stock & waitlist demand ─────────────────────────────────────────
+export interface WaitlistDemand {
+  waitlistId: string;
+  date: string;
+  productId: string;
+  productName: string;
+  category: ProductCategory;
+  productLine: ProductLine;
+  color: string;
+  size: string;
+  market: string;
+  persona: PersonaName;
+  waitlistSignups: number;
+  backInStockSignups: number;
+  pdpViewsWhileOutOfStock: number;
+  cartAttemptsWhileOutOfStock: number;
+  sizeAvailabilityRate: number;
+  estimatedLostRevenue: number;
+  expectedRecoveryRevenue: number;
+  expectedRecoveryRate: number;
+  recommendedAction: string;
+  priorityScore: number;
+  lifecycleTrigger: string;
+  inventoryOwner: string;
+  crmOwner: string;
+}
+
+// ── Returns, fit & size ─────────────────────────────────────────────────────
+export type ReturnReason =
+  | "Too small"
+  | "Too large"
+  | "Fit not as expected"
+  | "Color not as expected"
+  | "Fabric expectation mismatch"
+  | "Bought multiple sizes"
+  | "Style preference"
+  | "Quality issue"
+  | "Gift return"
+  | "Late delivery";
+
+export interface ReturnsFitData {
+  productId: string;
+  productName: string;
+  category: ProductCategory;
+  productLine: ProductLine;
+  persona: PersonaName;
+  returnRate: number;
+  exchangeRate: number;
+  topReason: ReturnReason;
+  reasonMix: { reason: ReturnReason; share: number }[];
+  sizeExchangeDirection: "Up" | "Down" | "Balanced";
+  refundAmount: number;
+  marginLoss: number;
+  fitRiskScore: number; // 0..100
+  sizeGuideUsedRate: number;
+  sizeGuideReturnReduction: number; // %
+  reviewSentiment: number;
+  preventableReturnEstimate: number;
+  returnAdjustedGrossProfit: number;
+  recommendedAction: string;
+}
+
+// ── Creative intelligence ───────────────────────────────────────────────────
+export type CreativeTheme =
+  | "Performance"
+  | "Softness / comfort"
+  | "Travel"
+  | "Work-to-weekend"
+  | "Studio-to-street"
+  | "Coastal lifestyle"
+  | "Outdoor recovery"
+  | "Giftability"
+  | "Premium basics"
+  | "New color drop";
+
+export interface CreativePerformance {
+  creativeId: string;
+  creativeTheme: CreativeTheme;
+  channel: Channel;
+  market: string;
+  persona: PersonaName;
+  productFocus: string;
+  impressions: number;
+  clicks: number;
+  ctr: number;
+  conversionRate: number;
+  revenue: number;
+  newCustomers: number;
+  customerQualityScore: number;
+  cac: number;
+  roas: number;
+  ltvCac: number;
+  returnRate: number;
+  marginAfterReturns: number;
+  recommendedAction: string;
+}
+
+// ── Onsite search & intent ──────────────────────────────────────────────────
+export interface OnsiteSearchIntent {
+  searchId: string;
+  query: string;
+  normalizedIntent: string;
+  market: string;
+  resultCount: number;
+  sessions: number;
+  productViews: number;
+  addToCart: number;
+  conversionRate: number;
+  revenue: number;
+  zeroResultRate: number;
+  relatedPersona: PersonaName;
+  relatedProducts: string[];
+  recommendedAction: string;
+  contentGap: boolean;
+  demandSignalScore: number; // 0..100
+  trend: number; // % change
+}
+
+// ── Product launch intelligence ─────────────────────────────────────────────
+export interface ProductLaunch {
+  launchId: string;
+  launchName: string;
+  launchDate: string;
+  productIds: string[];
+  category: ProductCategory;
+  forecastRevenue: number;
+  actualRevenue: number;
+  forecastAccuracy: number; // %
+  newCustomerContribution: number; // 0..1
+  repeatCustomerContribution: number; // 0..1
+  sellThroughRate: number;
+  sizeAvailabilityRate: number;
+  returnRate: number;
+  grossMargin: number;
+  marketingSpend: number;
+  primaryPersona: PersonaName;
+  topMarkets: string[];
+  inventoryRisk: "Low" | "Medium" | "High";
+  customerQualityScore: number;
+  recommendedAction: string;
+  sellThroughCurve: { week: number; planned: number; actual: number }[];
+}
+
+// ── Weather-triggered demand ────────────────────────────────────────────────
+export interface WeatherDemandTrigger {
+  triggerId: string;
+  date: string;
+  market: string;
+  weatherEvent: string;
+  temperatureChange: number; // °F
+  precipitationIndex: number; // 0..100
+  productCategory: ProductCategory;
+  recommendedProducts: string[];
+  expectedDemandLift: number; // %
+  recommendedChannel: string;
+  recommendedMessage: string;
+  urgency: "High" | "Medium" | "Low";
+  confidence: number;
+  owner: string;
+  expectedRevenueImpact: number;
+}
+
+// ── Digital shelf / PDP quality ─────────────────────────────────────────────
+export interface PdpQuality {
+  productId: string;
+  productName: string;
+  traffic: number;
+  conversionRate: number;
+  addToCartRate: number;
+  imageCompletenessScore: number;
+  videoAvailable: boolean;
+  reviewCount: number;
+  reviewRating: number;
+  fitClarityScore: number;
+  sizeGuideEngagement: number;
+  descriptionQualityScore: number;
+  colorAvailabilityRate: number;
+  sizeAvailabilityRate: number;
+  loadSpeedScore: number;
+  returnRate: number;
+  pdpQualityScore: number;
+  revenueOpportunity: number;
+  recommendedAction: string;
+}
+
+// ── Executive alerts ────────────────────────────────────────────────────────
+export type AlertSeverity = "Opportunity" | "Revenue at Risk" | "Watch" | "Anomaly";
+
+export interface ExecutiveAlert {
+  alertId: string;
+  type: string;
+  severity: AlertSeverity;
+  title: string;
+  businessImpact: string;
+  rootCause: string;
+  recommendedAction: string;
+  owner: string;
+  evidence: string[];
+  measurementPlan: string;
+  page: string;
 }

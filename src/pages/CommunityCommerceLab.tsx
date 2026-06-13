@@ -260,6 +260,8 @@ export function CommunityCommerceLab() {
                 <Metric label="Commission payout" value={compactCurrency(page.commissionPayout)} tone="clay" />
                 <Metric label="Margin after comm." value={compactCurrency(page.marginAfterCommission)} tone="sage" />
                 <Metric label="90-day halo" value={compactCurrency(page.haloRevenue90d)} tone="ocean" />
+                <Metric label="Return-adj. rev." value={compactCurrency(page.returnAdjustedRevenue)} />
+                <Metric label="Customer Quality" value={String(page.customerQualityScore)} tone="sage" />
               </div>
               <div className="mt-3 flex items-center justify-between rounded-lg bg-surface-2/50 px-3 py-2 text-[12px]">
                 <span className="text-ink-secondary">Activation ROI · confidence</span>
@@ -399,6 +401,7 @@ export function CommunityCommerceLab() {
                   <th className="py-2 pr-3 text-right font-medium">Eng.</th>
                   <th className="py-2 pr-3 text-right font-medium">Attributed</th>
                   <th className="py-2 pr-3 text-right font-medium">Incremental</th>
+                  <th className="py-2 pr-3 text-right font-medium">Quality</th>
                   <th className="py-2 pr-3 text-right font-medium">ROI</th>
                   <th className="py-2 pl-3 font-medium">Fit · Status</th>
                 </tr>
@@ -414,6 +417,9 @@ export function CommunityCommerceLab() {
                     <td className="tabular py-2.5 pr-3 text-right text-ink-secondary">{percentRaw(c.engagementRate * 100)}</td>
                     <td className="tabular py-2.5 pr-3 text-right text-ink-secondary">{compactCurrency(c.attributedRevenue)}</td>
                     <td className="tabular py-2.5 pr-3 text-right font-semibold text-sage-deep">{compactCurrency(c.incrementalRevenue)}</td>
+                    <td className="tabular py-2.5 pr-3 text-right">
+                      <span className={c.expectedCustomerQualityScore >= 82 ? "font-semibold text-sage-deep" : "text-ink-secondary"}>{c.expectedCustomerQualityScore}</span>
+                    </td>
                     <td className="tabular py-2.5 pr-3 text-right text-ink-secondary">{multiplier(c.roi)}</td>
                     <td className="py-2.5 pl-3">
                       <div className="flex items-center gap-2">
@@ -426,6 +432,35 @@ export function CommunityCommerceLab() {
               </tbody>
             </table>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* CQS by partner */}
+      <Card>
+        <CardContent className="pt-5">
+          <SectionHeader question="Which partners bring the highest-quality customers?" hint="Customer Quality Score by creator/partner — local community partners over-index vs broad affiliates." />
+          <ResponsiveContainer width="100%" height={320}>
+            <BarChart data={[...creatorPartners].sort((a, b) => b.expectedCustomerQualityScore - a.expectedCustomerQualityScore)} layout="vertical" margin={{ top: 4, right: 40, left: 8, bottom: 4 }}>
+              <CartesianGrid horizontal={false} strokeDasharray="3 3" />
+              <XAxis type="number" {...axisProps} domain={[0, 100]} />
+              <YAxis type="category" dataKey="name" {...axisProps} width={140} tick={{ fill: CHART.ink, fontSize: 11.5 }} />
+              <Tooltip
+                cursor={{ fill: CHART.grid, fillOpacity: 0.2 }}
+                content={({ active, payload }) => {
+                  if (!active || !payload?.length) return null;
+                  const p = payload[0].payload as (typeof creatorPartners)[number];
+                  return <TooltipShell title={p.name} rows={[{ label: "Customer Quality Score", value: String(p.expectedCustomerQualityScore) }, { label: "Type", value: p.partnerType }, { label: "Projected LTV", value: currency(p.projectedLtv) }]} />;
+                }}
+              />
+              <Bar dataKey="expectedCustomerQualityScore" radius={[0, 4, 4, 0]} maxBarSize={16}>
+                {[...creatorPartners].sort((a, b) => b.expectedCustomerQualityScore - a.expectedCustomerQualityScore).map((c, i) => (
+                  <Cell key={i} fill={c.expectedCustomerQualityScore >= 82 ? CHART.sage : c.expectedCustomerQualityScore >= 72 ? CHART.ocean : CHART.clay} />
+                ))}
+                <LabelList dataKey="expectedCustomerQualityScore" position="right" style={{ fill: CHART.muted, fontSize: 11, fontWeight: 600 }} />
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+          <p className="mt-2 text-[11px] text-ink-muted">Austin Run Club leads score 86 — above the ~71 paid-social prospecting average — with higher repeat probability and lower promo dependency.</p>
         </CardContent>
       </Card>
 

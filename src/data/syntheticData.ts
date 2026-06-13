@@ -8,6 +8,7 @@
 // ───────────────────────────────────────────────────────────────────────────
 
 import { Rng, clamp, round } from "./seed";
+import { customerQualityScore, returnAdjustedGrossProfit } from "../lib/scoring";
 import type {
   ActivationLandingPage,
   AiUseCase,
@@ -15,23 +16,33 @@ import type {
   CohortRow,
   CommissionScenario,
   Competitor,
+  CreativePerformance,
   CreatorPartner,
   DailyMetric,
   EventRow,
   EventType,
+  Experiment,
+  ExecutiveAlert,
   ExternalTrendRow,
   FunnelStage,
   GrowthInitiative,
+  IncrementalityTest,
   InventoryRow,
   MarketSignal,
+  OnsiteSearchIntent,
   PartnerStatus,
   PartnerType,
+  PdpQuality,
   Persona,
   PersonaName,
   Product,
+  ProductLaunch,
   Recommendation,
+  ReturnsFitData,
   TrendSource,
   VisitorSignal,
+  WaitlistDemand,
+  WeatherDemandTrigger,
 } from "./types";
 
 // ── Time anchoring (UTC, deterministic regardless of viewer timezone) ───────
@@ -444,6 +455,26 @@ function buildMarkets(): MarketSignal[] {
       lat: m.lat,
       lng: m.lng,
       revenueRank: 0,
+      customerQualityScore: customerQualityScore({
+        ltv: (norm(m.inc, 80, 175) + norm(m.rep, 0.22, 0.48)) / 2,
+        margin: clamp(60 + (m.rep - 0.35) * 110, 35, 92),
+        repeat: norm(m.rep, 0.22, 0.48),
+        returnInverse: clamp(74 + mr.normal(0, 4), 60, 86),
+        promoInverse: clamp(100 - m.comp * 0.62, 30, 95),
+        categoryExpansion: m.pf,
+        engagement: clamp(58 + m.socV * 0.3, 40, 95),
+        affinityDepth: m.pf,
+        timeToSecond: norm(m.rep, 0.22, 0.48),
+      }),
+      communityCommerceOpportunity: round(
+        clamp((m.well + m.run) / 2 * 0.45 + norm(m.socV, -10, 62) * 0.35 + m.pf * 0.2, 0, 100),
+        0,
+      ),
+      incrementalityReadiness: round(
+        clamp(58 + norm(m.tg, -5, 35) * 0.2 + (m.revTier <= 6 ? 12 : 0) - (m.comp > 70 ? 10 : 0) + mr.normal(0, 3), 40, 95),
+        0,
+      ),
+      recommendedControlMarkets: [] as string[],
     } satisfies MarketSignal;
   });
 
@@ -451,6 +482,28 @@ function buildMarkets(): MarketSignal[] {
   [...out]
     .sort((a, b) => b.ecommerceRevenue - a.ecommerceRevenue)
     .forEach((m, i) => (m.revenueRank = i + 1));
+
+  // Recommended control markets (matched-market similarity, US-to-US).
+  const seedByName = new Map(MARKET_SEEDS.map((s) => [s.name, s]));
+  out.forEach((m) => {
+    if (m.market === "Austin") {
+      m.recommendedControlMarkets = ["Nashville", "Salt Lake City", "Denver"];
+      return;
+    }
+    const self = seedByName.get(m.market)!;
+    m.recommendedControlMarkets = out
+      .filter((o) => o.market !== m.market && o.country === m.country)
+      .map((o) => {
+        const s = seedByName.get(o.market)!;
+        const overlap = s.topPersonas.filter((p) => self.topPersonas.includes(p)).length;
+        const sim = -Math.abs(s.revTier - self.revTier) * 2 - Math.abs(s.tg - self.tg) * 0.3 + overlap * 5;
+        return { market: o.market, sim };
+      })
+      .sort((a, b) => b.sim - a.sim)
+      .slice(0, 3)
+      .map((x) => x.market);
+  });
+
   return out.sort((a, b) => b.opportunityScore - a.opportunityScore);
 }
 
@@ -556,6 +609,23 @@ function buildPersonas(): Persona[] {
       cac: p.cac,
       repeatRate: p.repeat,
       emoji: p.emoji,
+      customerQualityScore: customerQualityScore({
+        ltv: norm(p.ltv, 220, 640),
+        margin: clamp(100 - p.promo * 90, 20, 92),
+        repeat: clamp(p.repeat * 170, 20, 95),
+        returnInverse: 100 - norm(p.churn, 0.12, 0.52) * 0.7,
+        promoInverse: clamp(100 - p.promo * 130, 15, 92),
+        categoryExpansion: clamp(p.categories.length * 22 + 30, 40, 95),
+        engagement: clamp(p.channels.includes("Email") || p.channels.includes("SMS") ? 82 : 58, 40, 92),
+        affinityDepth: clamp(p.products.length * 18 + 24, 40, 95),
+        timeToSecond: clamp(p.repeat * 160, 20, 92),
+      }),
+      repeatProbability: round(clamp(p.repeat * 1.15, 0.1, 0.85), 2),
+      categoryExpansionPotential: round(clamp(p.categories.length * 22 + 30, 40, 95), 0),
+      promoDependency: p.promo,
+      marginContribution: round(clamp(0.62 - p.promo * 0.18, 0.45, 0.66), 3),
+      timeToSecondPurchasePrediction: Math.round(clamp(120 - p.repeat * 150, 24, 140)),
+      returnRisk: round(clamp(p.churn * 0.5 + 0.04, 0.04, 0.3), 2),
     } satisfies Persona;
   });
 }
@@ -761,6 +831,8 @@ function buildChannels(): ChannelSummary[] {
     const attributedRevenue = Math.round(s.spend * s.roas);
     const newCustomers = Math.round((attributedRevenue * s.newShare) / (s.cac * 2.4));
     const ltv = s.channel === "Email" || s.channel === "SMS" || s.channel === "Direct" ? 560 : 420;
+    const B = CHANNEL_CQS[s.channel];
+    const ownedish = ["Email", "SMS", "Direct", "Organic Search", "Retail Halo"].includes(s.channel);
     return {
       channel: s.channel,
       spend: s.spend,
@@ -775,9 +847,24 @@ function buildChannels(): ChannelSummary[] {
       paybackMonths: round((s.cac / (ltv / 12)) * clamp(cr.normal(1, 0.05), 0.85, 1.2), 1),
       marginalRoas: s.marginal,
       qualityScore: s.quality,
+      customerQualityScore: customerQualityScore({
+        ltv: B, margin: B - 4, repeat: B, returnInverse: 74, promoInverse: B - 2,
+        categoryExpansion: B - 8, engagement: B + 4, affinityDepth: B - 6, timeToSecond: B - 4,
+      }),
+      returnAdjustedRoas: round(s.roas * (1 - (ownedish ? 0.05 : 0.12)), 2),
+      incrementalShare: CHANNEL_INCREMENTAL[s.channel],
     } satisfies ChannelSummary;
   });
 }
+
+const CHANNEL_CQS: Record<ChannelSummary["channel"], number> = {
+  "Paid Social": 71, "Brand Campaigns": 68, Influencer: 73, "Paid Search": 77, Affiliate: 81,
+  "Retail Halo": 83, "Organic Search": 86, Email: 90, SMS: 89, Direct: 92,
+};
+const CHANNEL_INCREMENTAL: Record<ChannelSummary["channel"], number> = {
+  "Paid Social": 0.62, Influencer: 0.58, "Brand Campaigns": 0.55, "Retail Halo": 0.5, Affiliate: 0.46,
+  "Organic Search": 0.4, "Paid Search": 0.34, Email: 0.22, SMS: 0.2, Direct: 0.12,
+};
 export const channels = buildChannels();
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -1165,6 +1252,14 @@ function buildUseCases(): AiUseCase[] {
     { name: "Localized creative recommendation engine", domain: "Creative / Growth", q: "Which message and product resonate by market?", impact: 1_300_000, impactLabel: "+$1.3M revenue", data: 62, complexity: 56, ttv: 4, confidence: 74, bizImpact: 70, owner: "Creative / Analytics", status: "Discovery", requiredData: ["Market signals", "Creative performance", "Persona mix"], model: "Market-persona affinity → creative ranking", activation: "Localized paid social & onsite", measure: "Creative lift by market vs default", governance: "Human creative approval" },
     { name: "AI-generated executive insight summaries", domain: "Analytics Enablement", q: "Can we draft trustworthy executive readouts faster?", impact: 600_000, impactLabel: "Analyst time saved", data: 90, complexity: 34, ttv: 1, confidence: 84, bizImpact: 58, owner: "Ecommerce Analytics", status: "POC Candidate", requiredData: ["Curated metrics", "Definitions", "Templates"], model: "LLM over governed metrics with citations", activation: "Drafts for human review in Executive Brief", measure: "Editor acceptance rate & time saved", governance: "Human-approved; cite every figure" },
     { name: "Experiment prioritization engine", domain: "Analytics Enablement", q: "Which tests should we run first?", impact: 900_000, impactLabel: "Test throughput", data: 78, complexity: 40, ttv: 2, confidence: 80, bizImpact: 64, owner: "Experimentation", status: "POC Candidate", requiredData: ["Idea backlog", "Impact estimates", "Effort"], model: "Expected-value ranking with uncertainty", activation: "Experiment roadmap & resourcing", measure: "Win rate & velocity vs baseline", governance: "Transparent scoring inputs" },
+    { name: "Customer Quality Score optimization", domain: "Growth / Data Science", q: "Are we acquiring the right customers, or just more?", impact: 2_700_000, impactLabel: "+ quality-weighted growth", data: 80, complexity: 52, ttv: 3, confidence: 79, bizImpact: 85, owner: "Growth / Analytics", status: "POC Candidate", requiredData: ["Predicted LTV", "Margin & return signals", "Engagement", "Promo dependency"], model: "Composite quality score feeding bidding & targeting", activation: "Value-based bidding, audience selection, lifecycle", measure: "Quality-adjusted LTV:CAC vs volume baseline", governance: "Transparent weights; no PII to model" },
+    { name: "Creator / activation landing page performance model", domain: "Affiliate / Community", q: "Which creators & pages drive incremental, high-quality DTC growth?", impact: 1_600_000, impactLabel: "+$1.6M incremental", data: 72, complexity: 48, ttv: 3, confidence: 77, bizImpact: 76, owner: "Growth / Retail", status: "In Test", requiredData: ["Landing-page analytics", "QR/UTM", "Commission", "CQS"], model: "Uplift + customer-quality model by partner/page", activation: "Partner selection & commission design", measure: "Incremental revenue & CQS vs generic page", governance: "Affiliate disclosure & human approval" },
+    { name: "Incrementality test planner", domain: "Experimentation", q: "How do we prove incrementality, not just attribution?", impact: 1_500_000, impactLabel: "Decision clarity", data: 78, complexity: 50, ttv: 2, confidence: 81, bizImpact: 78, owner: "Ecommerce Analytics", status: "POC Candidate", requiredData: ["Market panel", "Baselines", "Similarity features"], model: "Matched-market selection + MDE + power analysis", activation: "Geo-holdout & matched-market design", measure: "Backtest predicted vs realized lift", governance: "Pre-registered decision rules" },
+    { name: "Back-in-stock demand recovery model", domain: "Merchandising / CRM", q: "How much constrained demand can we recover?", impact: 1_800_000, impactLabel: "+$1.8M recovered", data: 82, complexity: 42, ttv: 2, confidence: 84, bizImpact: 79, owner: "Merch Planning / CRM", status: "Ready to Scale", requiredData: ["Waitlist & back-in-stock", "Inventory", "PDP OOS views"], model: "Lost-sales + recovery-rate forecast → triggers", activation: "Replenishment priority & restock SMS", measure: "Recovered revenue per restock vs holdout", governance: "Frequency caps; human-approved offers" },
+    { name: "PDP quality scoring", domain: "Ecommerce / Merch", q: "Which product pages limit conversion or drive returns?", impact: 1_300_000, impactLabel: "+$1.3M conversion", data: 76, complexity: 38, ttv: 2, confidence: 80, bizImpact: 72, owner: "Ecommerce / Merch", status: "POC Candidate", requiredData: ["PDP content", "Reviews", "Conversion", "Returns"], model: "Weighted digital-shelf quality score", activation: "PDP fix prioritization & A/B tests", measure: "Conversion & return-adjusted GP lift", governance: "Human review of content changes" },
+    { name: "Onsite search intent clustering", domain: "Ecommerce / Analytics", q: "What are shoppers telling us they want?", impact: 1_100_000, impactLabel: "Content-gap revenue", data: 74, complexity: 44, ttv: 3, confidence: 76, bizImpact: 70, owner: "Ecommerce / Analytics", status: "Discovery", requiredData: ["Onsite search logs", "Catalog taxonomy", "Conversion"], model: "Query normalization + intent clustering", activation: "Landing pages, merchandising, content", measure: "Zero-result reduction & intent conversion", governance: "Transparent intent mapping" },
+    { name: "Creative resonance prediction", domain: "Creative / Growth", q: "Which creative themes resonate by persona & market?", impact: 1_200_000, impactLabel: "+$1.2M efficiency", data: 64, complexity: 56, ttv: 4, confidence: 73, bizImpact: 71, owner: "Creative / Analytics", status: "Discovery", requiredData: ["Creative performance", "Persona mix", "CQS"], model: "Theme × persona × market resonance ranking", activation: "Localized creative & budget weighting", measure: "Creative lift & CQS by theme", governance: "Human creative approval" },
+    { name: "Weather-triggered demand model", domain: "Localization / Planning", q: "How should weather shape product & lifecycle timing?", impact: 900_000, impactLabel: "+$900K timing", data: 70, complexity: 46, ttv: 3, confidence: 74, bizImpact: 66, owner: "Demand Planning / Lifecycle", status: "Discovery", requiredData: ["Weather feeds", "Category demand", "Market"], model: "Weather → category demand-lift regression", activation: "Triggered campaigns & assortment timing", measure: "Incremental category lift vs control", governance: "Backtest before activation" },
   ];
 
   return seeds.map((s, i) => {
@@ -1214,6 +1309,13 @@ export const growthInitiatives: GrowthInitiative[] = [
   { id: "GI-6", name: "Product launch early-read model", description: "Predict launch outcomes from early sell-through signals.", revenueImpact: 1_400_000, grossProfitImpact: 840_000, cacReduction: 0, ltvLift: 0, conversionLift: 0, retentionLift: 0, inventoryRiskReduction: 900_000, confidence: 81, owner: "Merch Analytics", testDesign: "Backtest early-read vs final; forward validation.", timeToValue: "1–2 quarters", stage: "Next", status: "Needs Test" },
   { id: "GI-7", name: "Market opportunity scoring", description: "Standing model to rank localization opportunities.", revenueImpact: 3_100_000, grossProfitImpact: 1_860_000, cacReduction: 4, ltvLift: 3, conversionLift: 0, retentionLift: 0, inventoryRiskReduction: 0, confidence: 86, owner: "Ecommerce Analytics", testDesign: "Backtest vs realized growth; quarterly refresh.", timeToValue: "Now", stage: "Now", status: "High Confidence" },
   { id: "GI-8", name: "Next-best-action orchestration", description: "Unify onsite, email, and SMS into one decisioning layer.", revenueImpact: 2_300_000, grossProfitImpact: 1_380_000, cacReduction: 0, ltvLift: 6, conversionLift: 4, retentionLift: 5, inventoryRiskReduction: 0, confidence: 71, owner: "Data Science / Growth", testDesign: "Uplift test vs rules baseline across channels.", timeToValue: "2–3 quarters", stage: "Later", status: "Needs Test" },
+  { id: "GI-9", name: "Customer Quality Score optimization", description: "Bid, target, and message to customer quality, not just volume.", revenueImpact: 2_700_000, grossProfitImpact: 1_780_000, cacReduction: 6, ltvLift: 9, conversionLift: 0, retentionLift: 5, inventoryRiskReduction: 0, confidence: 79, owner: "Growth / Analytics", testDesign: "Geo holdout; quality-adjusted LTV:CAC vs volume baseline.", timeToValue: "1–2 quarters", stage: "Next", status: "Ready for POC" },
+  { id: "GI-10", name: "Return reduction / fit guidance", description: "PDP fit guidance + review snippets to lift return-adjusted profit.", revenueImpact: 0, grossProfitImpact: 1_240_000, cacReduction: 0, ltvLift: 2, conversionLift: 0, retentionLift: 3, inventoryRiskReduction: 0, confidence: 80, owner: "Product / UX", testDesign: "PDP A/B on high-return styles; return-adjusted GP.", timeToValue: "1 quarter", stage: "Now", status: "Ready for POC" },
+  { id: "GI-11", name: "Inventory recovery / waitlist capture", description: "Replenishment priority + back-in-stock triggers recover constrained demand.", revenueImpact: 1_800_000, grossProfitImpact: 1_053_000, cacReduction: 0, ltvLift: 0, conversionLift: 0, retentionLift: 0, inventoryRiskReduction: 1_800_000, confidence: 84, owner: "Merch Planning / CRM", testDesign: "Lifecycle holdout; recovered revenue per restock.", timeToValue: "Now", stage: "Now", status: "Data Ready" },
+  { id: "GI-12", name: "Experimentation operating system", description: "Standardize hypotheses, controls, and decision rules across teams.", revenueImpact: 1_400_000, grossProfitImpact: 840_000, cacReduction: 3, ltvLift: 2, conversionLift: 2, retentionLift: 2, inventoryRiskReduction: 0, confidence: 78, owner: "Ecommerce Analytics", testDesign: "Track win rate, velocity, and decision quality.", timeToValue: "1–2 quarters", stage: "Next", status: "High Confidence" },
+  { id: "GI-13", name: "Community commerce landing page test", description: "Curated creator/event pages to drive incremental, higher-quality customers.", revenueImpact: 1_600_000, grossProfitImpact: 920_000, cacReduction: 0, ltvLift: 5, conversionLift: 4, retentionLift: 4, inventoryRiskReduction: 0, confidence: 77, owner: "Growth / Retail", testDesign: "Landing-page test; CQS & incremental revenue vs generic.", timeToValue: "1 quarter", stage: "Now", status: "Needs Test" },
+  { id: "GI-14", name: "Geo-holdout measurement program", description: "Standing matched-market capability to prove incrementality.", revenueImpact: 0, grossProfitImpact: 0, cacReduction: 8, ltvLift: 0, conversionLift: 0, retentionLift: 0, inventoryRiskReduction: 0, confidence: 81, owner: "Ecommerce Analytics", testDesign: "Backtest predicted vs realized lift; pre-registered rules.", timeToValue: "1 quarter", stage: "Next", status: "High Confidence" },
+  { id: "GI-15", name: "PDP quality improvement", description: "Fix low-scoring PDPs: fit clarity, visual merchandising, reviews.", revenueImpact: 1_300_000, grossProfitImpact: 760_000, cacReduction: 0, ltvLift: 0, conversionLift: 5, retentionLift: 0, inventoryRiskReduction: 0, confidence: 80, owner: "Ecommerce / Merch", testDesign: "PDP A/B; conversion & return-adjusted GP.", timeToValue: "1 quarter", stage: "Now", status: "Ready for POC" },
 ];
 
 // ───────────────────────────────────────────────────────────────────────────
@@ -1367,29 +1469,46 @@ interface CreatorSeed {
 const CREATOR_SEEDS: CreatorSeed[] = [
   { name: "Austin Run Collective", type: "Run Club", market: "Austin", persona: "Performance Commuter", audience: 28000, engagement: 0.085, brandFit: 94, commission: 0.1, content: "Group runs + sunrise miles", event: "Austin Run Club + Recovery", status: "Top Performer" },
   { name: "Eastside Recovery Studio", type: "Recovery Studio", market: "Austin", persona: "Trail & Recovery", audience: 16000, engagement: 0.072, brandFit: 91, commission: 0.1, content: "Recovery + mobility sessions", event: "Austin Run Club + Recovery", status: "Active" },
-  { name: "Maya Render", type: "Creator", market: "Austin", persona: "Wellness Socialite", audience: 320000, engagement: 0.054, brandFit: 88, commission: 0.14, content: "Wellness + community reels", event: "Austin Run Club + Recovery", status: "Active" },
-  { name: "Trailhead Co.", type: "Local Partner", market: "Denver", persona: "Trail & Recovery", audience: 42000, engagement: 0.061, brandFit: 89, commission: 0.11, content: "Trail meetups + vlogs", event: "Denver Trail Series", status: "Active" },
+  { name: "Maya Render", type: "Wellness Creator", market: "Austin", persona: "Wellness Socialite", audience: 320000, engagement: 0.054, brandFit: 88, commission: 0.14, content: "Wellness + community reels", event: "Austin Run Club + Recovery", status: "Active" },
+  { name: "Trailhead Co.", type: "Outdoor Community", market: "Denver", persona: "Trail & Recovery", audience: 42000, engagement: 0.061, brandFit: 89, commission: 0.11, content: "Trail meetups + vlogs", event: "Denver Trail Series", status: "Active" },
   { name: "Jordan Vale", type: "Ambassador", market: "Boston", persona: "Performance Commuter", audience: 95000, engagement: 0.048, brandFit: 85, commission: 0.12, content: "Commuter style + run", event: "Boston Studio Takeover", status: "In Test" },
-  { name: "Coast & Current", type: "Creator", market: "Miami", persona: "Coastal Active", audience: 540000, engagement: 0.039, brandFit: 82, commission: 0.15, content: "Surf + coastal lifestyle", event: "Miami Coastal Activation", status: "Active" },
-  { name: "Sol Pilates", type: "Recovery Studio", market: "Los Angeles", persona: "Studio Minimalist", audience: 24000, engagement: 0.07, brandFit: 90, commission: 0.1, content: "Pilates flows + sets", event: "LA Flagship Preview", status: "Active" },
-  { name: "The Weekend Edit", type: "Affiliate", market: "New York", persona: "Travel Weekender", audience: 180000, engagement: 0.032, brandFit: 80, commission: 0.16, content: "Affiliate edits + travel", event: "—", status: "Active" },
+  { name: "Coast & Current", type: "Affiliate Creator", market: "Miami", persona: "Coastal Active", audience: 540000, engagement: 0.039, brandFit: 82, commission: 0.15, content: "Surf + coastal lifestyle", event: "Miami Coastal Activation", status: "Active" },
+  { name: "Sol Pilates", type: "Pilates Studio", market: "Los Angeles", persona: "Studio Minimalist", audience: 24000, engagement: 0.07, brandFit: 90, commission: 0.1, content: "Pilates flows + sets", event: "LA Flagship Preview", status: "Active" },
+  { name: "The Weekend Edit", type: "Affiliate Creator", market: "New York", persona: "Travel Weekender", audience: 180000, engagement: 0.032, brandFit: 80, commission: 0.16, content: "Affiliate edits + travel", event: "—", status: "Active" },
   { name: "Nashville Run Society", type: "Run Club", market: "Nashville", persona: "Wellness Socialite", audience: 19000, engagement: 0.079, brandFit: 87, commission: 0.1, content: "Run + community events", event: "Nashville Community Night", status: "Proposed" },
-  { name: "Peak & Powder", type: "Local Partner", market: "Salt Lake City", persona: "Trail & Recovery", audience: 33000, engagement: 0.058, brandFit: 86, commission: 0.11, content: "Ski + recovery content", event: "SLC Recovery Pop-Up", status: "Proposed" },
-  { name: "Dadbod Daily", type: "Creator", market: "Chicago", persona: "Modern Dad Uniform", audience: 410000, engagement: 0.036, brandFit: 78, commission: 0.15, content: "Everyday menswear", event: "—", status: "In Test" },
-  { name: "Studio Form", type: "Recovery Studio", market: "Seattle", persona: "Studio Minimalist", audience: 21000, engagement: 0.066, brandFit: 84, commission: 0.1, content: "Mobility + studio sets", event: "Seattle Pop-Up", status: "Proposed" },
+  { name: "Peak & Powder", type: "Outdoor Community", market: "Salt Lake City", persona: "Trail & Recovery", audience: 33000, engagement: 0.058, brandFit: 86, commission: 0.11, content: "Ski + recovery content", event: "SLC Recovery Pop-Up", status: "Proposed" },
+  { name: "Coach Liv", type: "Local Trainer", market: "Chicago", persona: "Modern Dad Uniform", audience: 64000, engagement: 0.052, brandFit: 83, commission: 0.12, content: "Strength + everyday training", event: "—", status: "In Test" },
+  { name: "Bayside Yoga", type: "Yoga Instructor", market: "Seattle", persona: "Studio Minimalist", audience: 21000, engagement: 0.066, brandFit: 84, commission: 0.1, content: "Mobility + studio sets", event: "Seattle Pop-Up", status: "Proposed" },
 ];
+
+const COMMUNITY_TYPES: PartnerType[] = [
+  "Run Club", "Recovery Studio", "Pilates Studio", "Yoga Instructor", "Local Trainer",
+  "Outdoor Community", "Local Partner",
+];
+function creatorCqsPremium(type: PartnerType): number {
+  if (COMMUNITY_TYPES.includes(type)) return 11;
+  if (type === "Ambassador") return 5;
+  if (type === "Resort / Hotel Partner") return 2;
+  return -3; // broad creators / affiliates
+}
 
 function buildCreators(): CreatorPartner[] {
   const cr = new Rng("creators");
   return CREATOR_SEEDS.map((c, i) => {
+    const persona = personas.find((p) => p.personaName === c.persona)!;
     const reach = c.audience * c.engagement;
     const attributedRevenue = Math.round(reach * cr.range(0.14, 0.24) * 142 * (c.brandFit / 85));
     const newCustomers = Math.round(attributedRevenue / cr.range(165, 215));
     // Local, high-fit partners convert more incrementally than broad affiliates.
-    const incRate = clamp(0.5 + (c.brandFit - 80) * 0.012 + (c.type === "Affiliate" ? -0.12 : c.type === "Creator" ? -0.04 : 0.08), 0.4, 0.82);
+    const incRate = clamp(
+      0.5 + (c.brandFit - 80) * 0.012 + (c.type.includes("Affiliate") ? -0.12 : c.type.includes("Creator") ? -0.04 : 0.08),
+      0.4,
+      0.82,
+    );
     const incrementalRevenue = Math.round(attributedRevenue * incRate);
     const payout = attributedRevenue * c.commission + 3500;
     const roi = round(attributedRevenue / payout, 2);
+    const cqs = round(clamp(c.brandFit * 0.8 + creatorCqsPremium(c.type), 55, 95), 0);
     return {
       partnerId: `CP-${String(i + 1).padStart(3, "0")}`,
       name: c.name,
@@ -1404,6 +1523,11 @@ function buildCreators(): CreatorPartner[] {
       contentType: c.content,
       eventAssociated: c.event,
       status: c.status,
+      expectedCustomerQualityScore: cqs,
+      averageOrderValue: Math.round(persona.avgAov * clamp(cr.normal(1, 0.04), 0.9, 1.1)),
+      returnRisk: persona.returnRisk,
+      projectedLtv: Math.round(persona.predictedLtv * (cqs / 80)),
+      incrementalLiftEstimate: round(incRate, 2),
       attributedRevenue,
       newCustomers,
       incrementalRevenue,
@@ -1488,11 +1612,13 @@ function buildLandingPages(): ActivationLandingPage[] {
     commissionPayout: 21600,
     marginAfterCommission: 83700,
     returnRate: 0.09,
+    returnAdjustedRevenue: 163800,
     haloRevenue30d: 235200,
     haloRevenue60d: 414400,
     haloRevenue90d: 560000,
     incrementalRevenueEstimate: 540000,
     cannibalizedRevenueEstimate: 200000,
+    customerQualityScore: 86,
     roi: 3.7,
     confidence: 84,
   };
@@ -1514,6 +1640,8 @@ function buildLandingPages(): ActivationLandingPage[] {
     const grossMargin = Math.round(revenue * 0.585);
     const commissionPayout = Math.round(revenue * s.commission);
     const halo90 = Math.round(revenue * lr.range(2.6, 3.3));
+    const returnRate = round(lr.range(0.07, 0.12), 2);
+    const partner = creatorPartners.find((p) => p.partnerId === s.partnerId);
     return {
       landingPageId: `LP-${String(i + 2).padStart(3, "0")}`,
       name: s.name,
@@ -1539,12 +1667,14 @@ function buildLandingPages(): ActivationLandingPage[] {
       grossMargin,
       commissionPayout,
       marginAfterCommission: grossMargin - commissionPayout,
-      returnRate: round(lr.range(0.07, 0.12), 2),
+      returnRate,
+      returnAdjustedRevenue: Math.round(revenue * (1 - returnRate)),
       haloRevenue30d: Math.round(halo90 * 0.42),
       haloRevenue60d: Math.round(halo90 * 0.74),
       haloRevenue90d: halo90,
       incrementalRevenueEstimate: Math.round((revenue + halo90) * lr.range(0.7, 0.77)),
       cannibalizedRevenueEstimate: Math.round((revenue + halo90) * lr.range(0.14, 0.2)),
+      customerQualityScore: partner ? round(clamp(partner.expectedCustomerQualityScore + lr.normal(0, 2), 55, 95), 0) : 74,
       roi: round((revenue + halo90) / (commissionPayout + revenue * 0.55), 2),
       confidence: round(lr.range(68, 82), 0),
     } satisfies ActivationLandingPage;
@@ -1555,9 +1685,604 @@ function buildLandingPages(): ActivationLandingPage[] {
 export const activationLandingPages = buildLandingPages();
 
 export const commissionScenarios: CommissionScenario[] = [
-  { scenarioId: "CM-1", model: "Flat 10%", commissionRate: 0.1, newCustomerBonus: 0, leadBonus: 0, revenue: 176000, marginAfterCommission: 85360, creatorPayout: 17600, newCustomers: 840, projectedLtv: 401520, recommendation: "Margin-safe baseline" },
-  { scenarioId: "CM-2", model: "Flat 15%", commissionRate: 0.15, newCustomerBonus: 0, leadBonus: 0, revenue: 194000, marginAfterCommission: 84390, creatorPayout: 29100, newCustomers: 1010, projectedLtv: 482780, recommendation: "Higher reach, lower margin" },
-  { scenarioId: "CM-3", model: "New-customer bonus (8% + $20)", commissionRate: 0.08, newCustomerBonus: 20, leadBonus: 0, revenue: 186000, marginAfterCommission: 73130, creatorPayout: 35680, newCustomers: 1040, projectedLtv: 497120, recommendation: "Best for acquisition" },
-  { scenarioId: "CM-4", model: "Lead + sale hybrid (10% + $3/lead)", commissionRate: 0.1, newCustomerBonus: 0, leadBonus: 3, revenue: 184000, marginAfterCommission: 79940, creatorPayout: 27700, newCustomers: 940, projectedLtv: 449320, recommendation: "Captures first-party leads" },
-  { scenarioId: "CM-5", model: "Return-adjusted 12%", commissionRate: 0.12, newCustomerBonus: 0, leadBonus: 0, revenue: 182000, marginAfterCommission: 86596, creatorPayout: 19874, newCustomers: 910, projectedLtv: 434980, recommendation: "Recommended — protects margin" },
+  { scenarioId: "CM-1", model: "Flat 10%", commissionRate: 0.1, newCustomerBonus: 0, leadBonus: 0, revenue: 176000, marginAfterCommission: 85360, creatorPayout: 17600, newCustomers: 840, projectedLtv: 401520, customerQualityScore: 79, returnAdjustedMargin: 76824, recommendation: "Margin-safe baseline" },
+  { scenarioId: "CM-2", model: "Flat 15%", commissionRate: 0.15, newCustomerBonus: 0, leadBonus: 0, revenue: 194000, marginAfterCommission: 84390, creatorPayout: 29100, newCustomers: 1010, projectedLtv: 482780, customerQualityScore: 75, returnAdjustedMargin: 75951, recommendation: "Higher reach, lower margin" },
+  { scenarioId: "CM-3", model: "New-customer bonus (8% + $20)", commissionRate: 0.08, newCustomerBonus: 20, leadBonus: 0, revenue: 186000, marginAfterCommission: 73130, creatorPayout: 35680, newCustomers: 1040, projectedLtv: 497120, customerQualityScore: 73, returnAdjustedMargin: 65817, recommendation: "Best for acquisition" },
+  { scenarioId: "CM-4", model: "Lead + sale hybrid (10% + $3/lead)", commissionRate: 0.1, newCustomerBonus: 0, leadBonus: 3, revenue: 184000, marginAfterCommission: 79940, creatorPayout: 27700, newCustomers: 940, projectedLtv: 449320, customerQualityScore: 80, returnAdjustedMargin: 71946, recommendation: "Captures first-party leads" },
+  { scenarioId: "CM-5", model: "Return-adjusted 12%", commissionRate: 0.12, newCustomerBonus: 0, leadBonus: 0, revenue: 182000, marginAfterCommission: 86596, creatorPayout: 19874, newCustomers: 910, projectedLtv: 434980, customerQualityScore: 84, returnAdjustedMargin: 79668, recommendation: "Recommended — protects margin" },
 ];
+
+// ───────────────────────────────────────────────────────────────────────────
+// EXPERIMENTATION & INCREMENTALITY
+// ───────────────────────────────────────────────────────────────────────────
+export const experiments: Experiment[] = [
+  {
+    experimentId: "EXP-001", name: "Austin localized activation", domain: "Pop-up / Events",
+    businessQuestion: "Where should Vuori localize investment next?",
+    hypothesis: "Austin market activation will create incremental ecommerce revenue beyond baseline market growth.",
+    owner: "Retail / Growth", status: "Running", startDate: dayOffset(-21), endDate: dayOffset(69),
+    testType: "Matched Market Test", testMarket: "Austin", controlMarkets: ["Nashville", "Salt Lake City", "Denver"],
+    audience: "All Austin DMA traffic", primaryKpi: "Incremental 90-day DTC revenue",
+    secondaryKpis: ["New-customer CAC", "Repeat rate", "Customer Quality Score"],
+    baseline: "Austin trailing 90-day DTC revenue", testResult: "Reading at day 21 — tracking above control",
+    lift: 11.4, confidence: 78, incrementalRevenue: 132000, marginImpact: 64000, customerQualityImpact: 9,
+    decision: "Running", nextStep: "Read 30-day incrementality vs matched controls",
+    relatedRecommendationId: "REC-001", relatedUseCaseId: "AI-02",
+  },
+  {
+    experimentId: "EXP-002", name: "Persona-based homepage personalization", domain: "Ecommerce",
+    businessQuestion: "What should each visitor see first?",
+    hypothesis: "Persona-specific homepage modules increase conversion and AOV without increasing return rate.",
+    owner: "Growth / Analytics", status: "Running", startDate: dayOffset(-34), endDate: dayOffset(11),
+    testType: "A/B Test", testMarket: "Sitewide", controlMarkets: [], audience: "50/50 sitewide split",
+    primaryKpi: "Conversion rate", secondaryKpis: ["AOV", "Return rate", "Margin per session", "Predicted LTV"],
+    baseline: "Generic homepage", testResult: "+6.2% margin-adjusted conversion", lift: 6.2, confidence: 83,
+    incrementalRevenue: 940000, marginImpact: 520000, customerQualityImpact: 4,
+    decision: "Scale", nextStep: "Scale — margin-adjusted conversion lift exceeds 5% threshold",
+    relatedRecommendationId: undefined, relatedUseCaseId: "AI-01",
+  },
+  {
+    experimentId: "EXP-003", name: "Back-in-stock SMS flow", domain: "CRM",
+    businessQuestion: "Can waitlist SMS recover constrained demand?",
+    hypothesis: "Size/color waitlist SMS drives incremental revenue within 72 hours of replenishment.",
+    owner: "Lifecycle CRM", status: "Reading Results", startDate: dayOffset(-48), endDate: dayOffset(-6),
+    testType: "Lifecycle Holdout", testMarket: "Cold-weather markets", controlMarkets: [],
+    audience: "Back-in-stock subscribers (10% holdout)", primaryKpi: "Revenue per recipient",
+    secondaryKpis: ["Unsubscribes", "Margin", "Repeat purchase"], baseline: "No restock SMS (holdout)",
+    testResult: "$4.80 revenue per recipient vs $0.90 holdout", lift: 31.0, confidence: 81,
+    incrementalRevenue: 286000, marginImpact: 168000, customerQualityImpact: 3,
+    decision: "Scale", nextStep: "Roll out to all constrained SKUs with 24h trigger SLA",
+    relatedRecommendationId: undefined, relatedUseCaseId: "AI-06",
+  },
+  {
+    experimentId: "EXP-004", name: "Creator landing page test", domain: "Affiliate / Community",
+    businessQuestion: "Do curated landing pages attract better customers?",
+    hypothesis: "Curated creator/event landing pages drive higher customer quality than generic collection pages.",
+    owner: "Growth / Retail", status: "Running", startDate: dayOffset(-18), endDate: dayOffset(24),
+    testType: "Landing Page Test", testMarket: "Austin, Denver, Miami", controlMarkets: [],
+    audience: "QR + creator-link traffic", primaryKpi: "Customer Quality Score",
+    secondaryKpis: ["Conversion rate", "LTV", "Margin after commission"], baseline: "Generic collection page",
+    testResult: "CQS 86 vs 74 on generic page", lift: 16.2, confidence: 79,
+    incrementalRevenue: 210000, marginImpact: 96000, customerQualityImpact: 12,
+    decision: "Iterate", nextStep: "Expand to 3 more markets; test commission models",
+    relatedRecommendationId: "REC-002", relatedUseCaseId: undefined,
+  },
+  {
+    experimentId: "EXP-005", name: "PDP fit guidance test", domain: "PDP optimization",
+    businessQuestion: "Can fit guidance cut returns without hurting conversion?",
+    hypothesis: "Enhanced fit guidance reduces returns without lowering conversion.",
+    owner: "Product / UX", status: "Reading Results", startDate: dayOffset(-40), endDate: dayOffset(2),
+    testType: "PDP Optimization Test", testMarket: "Sitewide", controlMarkets: [],
+    audience: "High-return styles (Daily Legging, Villa Wideleg)", primaryKpi: "Return-adjusted gross profit",
+    secondaryKpis: ["Return rate", "Conversion rate", "Size-guide engagement"], baseline: "Standard PDP",
+    testResult: "−18% returns, conversion flat", lift: 9.4, confidence: 80,
+    incrementalRevenue: 162000, marginImpact: 162000, customerQualityImpact: 5,
+    decision: "Scale", nextStep: "Roll fit guidance to all elevated-return styles",
+    relatedRecommendationId: "REC-006", relatedUseCaseId: "AI-10",
+  },
+  {
+    experimentId: "EXP-006", name: "LTV-based paid media bidding", domain: "Paid media",
+    businessQuestion: "How do we bid to predicted lifetime value?",
+    hypothesis: "Value-based bidding lowers CAC for equal-quality customers via geo holdout.",
+    owner: "Performance Marketing", status: "Designing", startDate: dayOffset(7), endDate: dayOffset(67),
+    testType: "Geo Holdout", testMarket: "West region", controlMarkets: ["Phoenix", "Dallas", "Chicago"],
+    audience: "Prospecting paid social", primaryKpi: "Blended CAC",
+    secondaryKpis: ["LTV:CAC", "Customer Quality Score", "New customers"], baseline: "Last-click ROAS bidding",
+    testResult: "—", lift: 0, confidence: 72, incrementalRevenue: 0, marginImpact: 0, customerQualityImpact: 0,
+    decision: "Proposed", nextStep: "Finalize geo holdout design and MDE",
+    relatedRecommendationId: "REC-003", relatedUseCaseId: "AI-04",
+  },
+  {
+    experimentId: "EXP-007", name: "DreamKnit localized lifecycle", domain: "Localization",
+    businessQuestion: "Does localized layering creative lift cold-market revenue?",
+    hypothesis: "Localized comfort/layering creative lifts PDP conversion in cold-weather markets.",
+    owner: "Growth / Lifecycle", status: "Running", startDate: dayOffset(-12), endDate: dayOffset(30),
+    testType: "Matched Market Test", testMarket: "Denver, Boston", controlMarkets: ["Chicago", "Seattle"],
+    audience: "Cold-market lifecycle audience", primaryKpi: "Incremental revenue",
+    secondaryKpis: ["PDP conversion", "Email/SMS revenue"], baseline: "Default creative",
+    testResult: "Tracking +8% vs control", lift: 8.0, confidence: 75, incrementalRevenue: 118000,
+    marginImpact: 64000, customerQualityImpact: 2, decision: "Running", nextStep: "Read 30-day lift",
+    relatedRecommendationId: "REC-005", relatedUseCaseId: undefined,
+  },
+  {
+    experimentId: "EXP-008", name: "Mobile PDP performance fix", domain: "Ecommerce",
+    businessQuestion: "Where is mobile demand leaking before purchase?",
+    hypothesis: "Faster mobile PDP image load recovers product-view-to-cart drop-off.",
+    owner: "Ecommerce Tech", status: "Scale", startDate: dayOffset(-70), endDate: dayOffset(-14),
+    testType: "A/B Test", testMarket: "Sitewide (mobile)", controlMarkets: [],
+    audience: "Mobile sessions", primaryKpi: "Mobile conversion rate",
+    secondaryKpis: ["PDP→cart", "Bounce rate"], baseline: "Current PDP", testResult: "+9% mobile conversion",
+    lift: 9.0, confidence: 88, incrementalRevenue: 680000, marginImpact: 396000, customerQualityImpact: 1,
+    decision: "Scale", nextStep: "Shipped — monitor Core Web Vitals",
+    relatedRecommendationId: "REC-006", relatedUseCaseId: undefined,
+  },
+  {
+    experimentId: "EXP-009", name: "Size availability optimization", domain: "Merchandising",
+    businessQuestion: "Which size breaks are capping revenue?",
+    hypothesis: "Closing M/L size breaks in hero styles recovers suppressed revenue.",
+    owner: "Merch Planning", status: "Iterate", startDate: dayOffset(-55), endDate: dayOffset(-1),
+    testType: "Matched Market Test", testMarket: "Mountain markets", controlMarkets: ["Phoenix", "Dallas"],
+    audience: "Constrained hero styles", primaryKpi: "Recovered revenue",
+    secondaryKpis: ["Size availability rate", "Stockout rate"], baseline: "Pre-replenishment",
+    testResult: "$2.1M recovered run-rate", lift: 12.0, confidence: 85, incrementalRevenue: 2100000,
+    marginImpact: 1280000, customerQualityImpact: 0, decision: "Scale", nextStep: "Codify size-curve guardrails",
+    relatedRecommendationId: undefined, relatedUseCaseId: "AI-09",
+  },
+  {
+    experimentId: "EXP-010", name: "Weather-triggered campaign automation", domain: "Localization",
+    businessQuestion: "Should weather shape lifecycle timing?",
+    hypothesis: "Weather-triggered creative lifts category demand within 7 days of a weather event.",
+    owner: "Growth / Lifecycle", status: "Proposed", startDate: dayOffset(14), endDate: dayOffset(74),
+    testType: "Incrementality Test", testMarket: "Denver, Seattle", controlMarkets: ["Chicago", "Boston"],
+    audience: "Weather-triggered lifecycle", primaryKpi: "Incremental category revenue",
+    secondaryKpis: ["Open/click rate", "Conversion"], baseline: "Standard calendar", testResult: "—",
+    lift: 0, confidence: 70, incrementalRevenue: 0, marginImpact: 0, customerQualityImpact: 0,
+    decision: "Needs More Data", nextStep: "Backtest weather-demand model before launch",
+    relatedRecommendationId: undefined, relatedUseCaseId: undefined,
+  },
+];
+
+export const incrementalityTests: IncrementalityTest[] = [
+  {
+    testId: "INC-001", name: "Austin activation geo-holdout", testType: "Matched Market Test",
+    testMarket: "Austin", controlMarkets: ["Nashville", "Salt Lake City", "Denver"], marketSimilarityScore: 88,
+    startDate: dayOffset(-21), endDate: dayOffset(69), baselineRevenue: 4_140_000, expectedLift: 9, actualLift: 11.4,
+    incrementalRevenue: 132000, attributedRevenue: 184000, cannibalizedRevenue: 52000, confidence: 78,
+    minimumDetectableEffect: 4.5, recommendedDuration: 13, status: "Running", owner: "Ecommerce Analytics",
+    decisionRule: "Scale if incremental lift > MDE (4.5%) at ≥80% confidence after 90 days.",
+    similarityFactors: [
+      { factor: "Baseline ecommerce revenue", score: 86 }, { factor: "Traffic trend", score: 84 },
+      { factor: "Persona mix", score: 91 }, { factor: "Category mix", score: 88 },
+      { factor: "Seasonality", score: 90 }, { factor: "Paid media exposure", score: 83 },
+      { factor: "Retail/store influence", score: 92 }, { factor: "External demand trend", score: 85 },
+    ],
+  },
+  {
+    testId: "INC-002", name: "LTV bidding geo-holdout (West)", testType: "Geo Holdout", testMarket: "West region",
+    controlMarkets: ["Phoenix", "Dallas", "Chicago"], marketSimilarityScore: 82, startDate: dayOffset(7),
+    endDate: dayOffset(67), baselineRevenue: 9_800_000, expectedLift: 6, actualLift: null, incrementalRevenue: 0,
+    attributedRevenue: 0, cannibalizedRevenue: 0, confidence: 72, minimumDetectableEffect: 3.8, recommendedDuration: 9,
+    status: "Designing", owner: "Performance Marketing",
+    decisionRule: "Scale if CAC drop ≥8% with stable Customer Quality Score.",
+    similarityFactors: [
+      { factor: "Baseline ecommerce revenue", score: 80 }, { factor: "Traffic trend", score: 78 },
+      { factor: "Persona mix", score: 84 }, { factor: "Category mix", score: 83 },
+      { factor: "Seasonality", score: 86 }, { factor: "Paid media exposure", score: 79 },
+    ],
+  },
+  {
+    testId: "INC-003", name: "DreamKnit cold-market lift", testType: "Matched Market Test", testMarket: "Denver, Boston",
+    controlMarkets: ["Chicago", "Seattle"], marketSimilarityScore: 85, startDate: dayOffset(-12), endDate: dayOffset(30),
+    baselineRevenue: 5_600_000, expectedLift: 7, actualLift: 8.0, incrementalRevenue: 118000, attributedRevenue: 162000,
+    cannibalizedRevenue: 44000, confidence: 75, minimumDetectableEffect: 4.0, recommendedDuration: 8, status: "Running",
+    owner: "Growth / Lifecycle", decisionRule: "Scale if incremental lift > 4% at ≥75% confidence.",
+    similarityFactors: [
+      { factor: "Baseline ecommerce revenue", score: 84 }, { factor: "Traffic trend", score: 82 },
+      { factor: "Persona mix", score: 86 }, { factor: "Category mix", score: 88 }, { factor: "Seasonality", score: 89 },
+    ],
+  },
+  {
+    testId: "INC-004", name: "Creator landing page incrementality", testType: "Landing Page Test",
+    testMarket: "Austin, Miami", controlMarkets: ["Nashville", "Phoenix"], marketSimilarityScore: 80,
+    startDate: dayOffset(-18), endDate: dayOffset(24), baselineRevenue: 3_900_000, expectedLift: 8, actualLift: 9.1,
+    incrementalRevenue: 96000, attributedRevenue: 138000, cannibalizedRevenue: 38000, confidence: 76,
+    minimumDetectableEffect: 5.0, recommendedDuration: 6, status: "Running", owner: "Growth / Retail",
+    decisionRule: "Scale if CQS > generic page and incremental lift > MDE.",
+    similarityFactors: [
+      { factor: "Baseline ecommerce revenue", score: 79 }, { factor: "Persona mix", score: 83 },
+      { factor: "Category mix", score: 81 }, { factor: "External demand trend", score: 84 },
+    ],
+  },
+  {
+    testId: "INC-005", name: "Nashville emerging-market test", testType: "Incrementality Test", testMarket: "Nashville",
+    controlMarkets: ["Salt Lake City", "Phoenix", "Dallas"], marketSimilarityScore: 83, startDate: dayOffset(21),
+    endDate: dayOffset(111), baselineRevenue: 2_300_000, expectedLift: 10, actualLift: null, incrementalRevenue: 0,
+    attributedRevenue: 0, cannibalizedRevenue: 0, confidence: 71, minimumDetectableEffect: 5.5, recommendedDuration: 13,
+    status: "Proposed", owner: "Ecommerce Analytics", decisionRule: "Scale to next emerging market if lift > 6%.",
+    similarityFactors: [
+      { factor: "Baseline ecommerce revenue", score: 82 }, { factor: "Persona mix", score: 80 },
+      { factor: "Seasonality", score: 85 }, { factor: "External demand trend", score: 86 },
+    ],
+  },
+];
+
+// ───────────────────────────────────────────────────────────────────────────
+// BACK-IN-STOCK & WAITLIST DEMAND
+// ───────────────────────────────────────────────────────────────────────────
+function buildWaitlist(): WaitlistDemand[] {
+  const wr = new Rng("waitlist");
+  const specs: { product: string; market: string; size: string; persona: PersonaName; sev: "High" | "Medium" | "Low" }[] = [
+    { product: "Sunday Performance Jogger", market: "Denver", size: "M", persona: "Trail & Recovery", sev: "High" },
+    { product: "Sunday Performance Jogger", market: "Salt Lake City", size: "L", persona: "Trail & Recovery", sev: "High" },
+    { product: "Meta Pant", market: "New York", size: "M", persona: "Performance Commuter", sev: "High" },
+    { product: "Daily Legging", market: "Los Angeles", size: "S", persona: "Studio Minimalist", sev: "High" },
+    { product: "Canyon Insulated Jacket", market: "Denver", size: "L", persona: "Trail & Recovery", sev: "Medium" },
+    { product: "Villa Wideleg", market: "Miami", size: "S", persona: "Travel Weekender", sev: "Medium" },
+    { product: "Daily Legging", market: "Austin", size: "XS", persona: "Wellness Socialite", sev: "Medium" },
+    { product: "Restore Half Zip", market: "Salt Lake City", size: "M", persona: "Trail & Recovery", sev: "Medium" },
+    { product: "Cloudridge Lined Pant", market: "Denver", size: "L", persona: "Modern Dad Uniform", sev: "High" },
+    { product: "Coastal Training Tank", market: "San Diego", size: "S", persona: "Coastal Active", sev: "Low" },
+    { product: "Meta Pant", market: "Boston", size: "L", persona: "Performance Commuter", sev: "Medium" },
+    { product: "Halo Essential Hoodie", market: "Seattle", size: "L", persona: "Premium Basics Loyalist", sev: "Low" },
+  ];
+  return specs.map((s, i) => {
+    const prod = products.find((p) => p.productName === s.product)!;
+    const waitlistSignups = s.sev === "High" ? wr.int(900, 2400) : s.sev === "Medium" ? wr.int(300, 850) : wr.int(80, 280);
+    const backInStock = Math.round(waitlistSignups * wr.range(0.55, 0.78));
+    const lost = s.sev === "High" ? wr.int(180000, 460000) : s.sev === "Medium" ? wr.int(60000, 160000) : wr.int(12000, 50000);
+    const recoveryRate = wr.range(0.58, 0.78);
+    return {
+      waitlistId: `WL-${String(i + 1).padStart(3, "0")}`,
+      date: dayOffset(-wr.int(1, 14)),
+      productId: prod.productId,
+      productName: s.product,
+      category: prod.category,
+      productLine: prod.productLine,
+      color: prod.color,
+      size: s.size,
+      market: s.market,
+      persona: s.persona,
+      waitlistSignups,
+      backInStockSignups: backInStock,
+      pdpViewsWhileOutOfStock: Math.round(waitlistSignups * wr.range(6, 12)),
+      cartAttemptsWhileOutOfStock: Math.round(waitlistSignups * wr.range(0.8, 1.6)),
+      sizeAvailabilityRate: round(s.sev === "High" ? wr.range(0.28, 0.5) : s.sev === "Medium" ? wr.range(0.55, 0.75) : wr.range(0.8, 0.95), 2),
+      estimatedLostRevenue: lost,
+      expectedRecoveryRevenue: Math.round(lost * recoveryRate),
+      expectedRecoveryRate: round(recoveryRate, 2),
+      recommendedAction: s.sev === "High" ? "Prioritize replenishment + trigger back-in-stock SMS" : "Capture waitlist on PDP + recommend substitutes",
+      priorityScore: round(clamp((lost / 4600) + waitlistSignups / 30 + (1 - (s.sev === "High" ? 0.4 : 0.7)) * 40, 0, 100), 0),
+      lifecycleTrigger: "Back-in-stock SMS within 24h of replenishment",
+      inventoryOwner: "Merch Planning",
+      crmOwner: "Lifecycle CRM",
+    } satisfies WaitlistDemand;
+  }).sort((a, b) => b.estimatedLostRevenue - a.estimatedLostRevenue);
+}
+export const waitlistDemand = buildWaitlist();
+export const waitlistRecoverable = waitlistDemand.reduce((s, w) => s + w.expectedRecoveryRevenue, 0);
+
+// ───────────────────────────────────────────────────────────────────────────
+// RETURNS, FIT & SIZE
+// ───────────────────────────────────────────────────────────────────────────
+function buildReturnsFit(): ReturnsFitData[] {
+  const rr = new Rng("returns");
+  const reasons: ReturnsFitData["reasonMix"][number]["reason"][] = [
+    "Too small", "Too large", "Fit not as expected", "Color not as expected", "Fabric expectation mismatch",
+    "Bought multiple sizes", "Style preference", "Quality issue", "Gift return", "Late delivery",
+  ];
+  const specs: { product: string; persona: PersonaName; topReason: ReturnsFitData["topReason"]; dir: "Up" | "Down" | "Balanced" }[] = [
+    { product: "Daily Legging", persona: "Studio Minimalist", topReason: "Too small", dir: "Up" },
+    { product: "Villa Wideleg", persona: "Travel Weekender", topReason: "Fit not as expected", dir: "Down" },
+    { product: "Cloudridge Lined Pant", persona: "Trail & Recovery", topReason: "Too large", dir: "Down" },
+    { product: "DreamKnit Layer", persona: "Travel Weekender", topReason: "Fabric expectation mismatch", dir: "Balanced" },
+    { product: "Meta Pant", persona: "Performance Commuter", topReason: "Too small", dir: "Up" },
+    { product: "Canyon Insulated Jacket", persona: "Trail & Recovery", topReason: "Bought multiple sizes", dir: "Balanced" },
+    { product: "Kore Short", persona: "Coastal Active", topReason: "Style preference", dir: "Balanced" },
+    { product: "Halo Essential Hoodie", persona: "Premium Basics Loyalist", topReason: "Gift return", dir: "Balanced" },
+    { product: "Coastal Training Tank", persona: "Wellness Socialite", topReason: "Color not as expected", dir: "Balanced" },
+    { product: "Sunday Performance Jogger", persona: "Modern Dad Uniform", topReason: "Too large", dir: "Down" },
+  ];
+  return specs.map((s) => {
+    const prod = products.find((p) => p.productName === s.product)!;
+    const returnRate = prod.returnRate;
+    const refundAmount = Math.round(prod.revenue * returnRate);
+    const marginLoss = Math.round(refundAmount * prod.marginRate + refundAmount * 0.08);
+    const reasonMix = reasons
+      .map((reason) => ({ reason, share: reason === s.topReason ? rr.range(0.26, 0.4) : rr.range(0.02, 0.12) }))
+      .sort((a, b) => b.share - a.share)
+      .slice(0, 5);
+    const reasonTotal = reasonMix.reduce((a, b) => a + b.share, 0);
+    reasonMix.forEach((m) => (m.share = round(m.share / reasonTotal, 2)));
+    const sizeGuideReduction = round(rr.range(12, 22), 0);
+    const preventable = Math.round(refundAmount * rr.range(0.22, 0.4));
+    return {
+      productId: prod.productId,
+      productName: s.product,
+      category: prod.category,
+      productLine: prod.productLine,
+      persona: s.persona,
+      returnRate,
+      exchangeRate: round(returnRate * rr.range(0.3, 0.5), 3),
+      topReason: s.topReason,
+      reasonMix,
+      sizeExchangeDirection: s.dir,
+      refundAmount,
+      marginLoss,
+      fitRiskScore: round(clamp(returnRate * 480 + (s.topReason.includes("small") || s.topReason.includes("large") ? 18 : 4) + rr.normal(0, 4), 10, 95), 0),
+      sizeGuideUsedRate: round(rr.range(0.18, 0.42), 2),
+      sizeGuideReturnReduction: sizeGuideReduction,
+      reviewSentiment: round(rr.range(0.45, 0.78), 2),
+      preventableReturnEstimate: preventable,
+      returnAdjustedGrossProfit: returnAdjustedGrossProfit({ revenue: prod.revenue, marginRate: prod.marginRate, returnRate }),
+      recommendedAction: returnRate > 0.12 ? "Add fit guidance + review snippets on PDP; suppress in paid acquisition" : "Monitor; protect return-adjusted margin",
+    } satisfies ReturnsFitData;
+  }).sort((a, b) => b.marginLoss - a.marginLoss);
+}
+export const returnsFitData = buildReturnsFit();
+
+// ───────────────────────────────────────────────────────────────────────────
+// CREATIVE INTELLIGENCE
+// ───────────────────────────────────────────────────────────────────────────
+function buildCreative(): CreativePerformance[] {
+  const cr = new Rng("creative");
+  const specs: { theme: CreativePerformance["creativeTheme"]; channel: ChannelSummary["channel"]; market: string; persona: PersonaName; product: string; strong: boolean }[] = [
+    { theme: "Work-to-weekend", channel: "Paid Search", market: "Boston", persona: "Performance Commuter", product: "Meta Pant", strong: true },
+    { theme: "Softness / comfort", channel: "Paid Social", market: "Los Angeles", persona: "Studio Minimalist", product: "DreamKnit Layer", strong: true },
+    { theme: "Travel", channel: "Email", market: "New York", persona: "Travel Weekender", product: "Villa Wideleg", strong: true },
+    { theme: "Outdoor recovery", channel: "Affiliate", market: "Denver", persona: "Trail & Recovery", product: "Restore Half Zip", strong: true },
+    { theme: "Coastal lifestyle", channel: "Influencer", market: "Miami", persona: "Coastal Active", product: "Coastal Training Tank", strong: false },
+    { theme: "Performance", channel: "Paid Social", market: "Austin", persona: "Performance Commuter", product: "Sunday Performance Jogger", strong: true },
+    { theme: "Studio-to-street", channel: "Paid Social", market: "Austin", persona: "Wellness Socialite", product: "Daily Legging", strong: false },
+    { theme: "Premium basics", channel: "Email", market: "San Francisco", persona: "Premium Basics Loyalist", product: "Strato Tech Tee", strong: true },
+    { theme: "Giftability", channel: "Paid Search", market: "Chicago", persona: "Gift Giver", product: "Halo Essential Hoodie", strong: false },
+    { theme: "New color drop", channel: "SMS", market: "Nashville", persona: "Wellness Socialite", product: "Villa Wideleg", strong: false },
+    { theme: "Travel", channel: "Paid Social", market: "Miami", persona: "Travel Weekender", product: "Transit Commuter Shirt", strong: false },
+    { theme: "Outdoor recovery", channel: "Paid Search", market: "Salt Lake City", persona: "Trail & Recovery", product: "Canyon Insulated Jacket", strong: true },
+  ];
+  return specs.map((s, i) => {
+    const impressions = cr.int(280000, 1400000);
+    const ctr = round((s.strong ? cr.range(0.012, 0.02) : cr.range(0.006, 0.012)), 4);
+    const clicks = Math.round(impressions * ctr);
+    const conversionRate = round((s.strong ? cr.range(0.03, 0.05) : cr.range(0.018, 0.032)), 4);
+    const orders = Math.round(clicks * conversionRate);
+    const aov = cr.range(128, 162);
+    const revenue = Math.round(orders * aov);
+    const newCustomers = Math.round(orders * cr.range(0.5, 0.7));
+    const cac = Math.round((revenue * 0.22) / Math.max(1, newCustomers));
+    const cqs = round(clamp((s.strong ? 80 : 70) + cr.normal(0, 4), 58, 92), 0);
+    const returnRate = round(cr.range(0.07, 0.13), 2);
+    return {
+      creativeId: `CRV-${String(i + 1).padStart(3, "0")}`,
+      creativeTheme: s.theme,
+      channel: s.channel,
+      market: s.market,
+      persona: s.persona,
+      productFocus: s.product,
+      impressions,
+      clicks,
+      ctr,
+      conversionRate,
+      revenue,
+      newCustomers,
+      customerQualityScore: cqs,
+      cac,
+      roas: round(revenue / (revenue * 0.22), 2),
+      ltvCac: round((cqs * 6) / cac, 2),
+      returnRate,
+      marginAfterReturns: returnAdjustedGrossProfit({ revenue, marginRate: 0.585, returnRate }),
+      recommendedAction: s.strong ? "Scale spend + expand to similar personas/markets" : "Iterate creative or reallocate budget",
+    } satisfies CreativePerformance;
+  });
+}
+export const creativePerformance = buildCreative();
+
+// ───────────────────────────────────────────────────────────────────────────
+// ONSITE SEARCH & INTENT
+// ───────────────────────────────────────────────────────────────────────────
+function buildSearchIntent(): OnsiteSearchIntent[] {
+  const sr = new Rng("searchintent");
+  const specs: { query: string; intent: string; persona: PersonaName; products: string[]; gap: boolean; market: string; trend: number }[] = [
+    { query: "travel pants", intent: "Travel & commuter bottoms", persona: "Travel Weekender", products: ["Villa Wideleg", "Meta Pant"], gap: true, market: "Boston", trend: 46 },
+    { query: "work pants", intent: "Commuter / workwear bottoms", persona: "Performance Commuter", products: ["Meta Pant"], gap: true, market: "New York", trend: 38 },
+    { query: "pilates set", intent: "Matching studio set", persona: "Studio Minimalist", products: ["Daily Legging"], gap: false, market: "Los Angeles", trend: 29 },
+    { query: "running shorts", intent: "Run / training shorts", persona: "Performance Commuter", products: ["Kore Short"], gap: false, market: "Austin", trend: 22 },
+    { query: "soft hoodie", intent: "Comfort layering", persona: "Premium Basics Loyalist", products: ["Halo Essential Hoodie", "DreamKnit Layer"], gap: false, market: "Seattle", trend: 18 },
+    { query: "golf polo", intent: "Performance polo", persona: "Modern Dad Uniform", products: ["Strato Tech Polo"], gap: true, market: "Dallas", trend: 31 },
+    { query: "airport outfit", intent: "Travel comfort set", persona: "Travel Weekender", products: ["Villa Wideleg", "Halo Essential Hoodie"], gap: true, market: "New York", trend: 41 },
+    { query: "cold weather jogger", intent: "Insulated bottoms", persona: "Trail & Recovery", products: ["Cloudridge Lined Pant", "Sunday Performance Jogger"], gap: false, market: "Denver", trend: 34 },
+    { query: "gift for dad", intent: "Gifting", persona: "Gift Giver", products: ["Halo Essential Hoodie", "Meta Pant"], gap: false, market: "Chicago", trend: 12 },
+    { query: "matching set", intent: "Studio set", persona: "Wellness Socialite", products: ["Daily Legging", "Coastal Training Tank"], gap: false, market: "Austin", trend: 27 },
+    { query: "lightweight layers", intent: "Transitional layering", persona: "Travel Weekender", products: ["DreamKnit Layer"], gap: true, market: "San Diego", trend: 24 },
+    { query: "wideleg pants", intent: "Wide-leg silhouette", persona: "Studio Minimalist", products: ["Villa Wideleg"], gap: false, market: "Miami", trend: 33 },
+    { query: "recovery hoodie", intent: "Recovery / mobility", persona: "Trail & Recovery", products: ["Restore Half Zip", "Halo Essential Hoodie"], gap: true, market: "Salt Lake City", trend: 36 },
+  ];
+  return specs.map((s, i) => {
+    const sessions = sr.int(4200, 38000);
+    const conversionRate = round(s.gap ? sr.range(0.018, 0.03) : sr.range(0.035, 0.06), 4);
+    const orders = Math.round(sessions * conversionRate);
+    return {
+      searchId: `SQ-${String(i + 1).padStart(3, "0")}`,
+      query: s.query,
+      normalizedIntent: s.intent,
+      market: s.market,
+      resultCount: s.gap ? sr.int(0, 6) : sr.int(8, 40),
+      sessions,
+      productViews: Math.round(sessions * sr.range(0.5, 0.7)),
+      addToCart: Math.round(orders * sr.range(1.6, 2.4)),
+      conversionRate,
+      revenue: Math.round(orders * sr.range(130, 158)),
+      zeroResultRate: round(s.gap ? sr.range(0.18, 0.4) : sr.range(0.0, 0.06), 3),
+      relatedPersona: s.persona,
+      relatedProducts: s.products,
+      recommendedAction: s.gap ? `Create a curated "${s.intent}" landing page and test vs search results` : "Surface intent earlier in onsite merchandising",
+      contentGap: s.gap,
+      demandSignalScore: round(clamp(s.trend * 1.4 + sessions / 600, 0, 100), 0),
+      trend: s.trend,
+    } satisfies OnsiteSearchIntent;
+  }).sort((a, b) => b.demandSignalScore - a.demandSignalScore);
+}
+export const onsiteSearchIntent = buildSearchIntent();
+
+// ───────────────────────────────────────────────────────────────────────────
+// PRODUCT LAUNCH INTELLIGENCE
+// ───────────────────────────────────────────────────────────────────────────
+function launchCurve(rng: Rng, beat: number): { week: number; planned: number; actual: number }[] {
+  return Array.from({ length: 8 }, (_, w) => {
+    const planned = round(100 * (1 - Math.exp(-0.4 * (w + 1))), 0);
+    return { week: w + 1, planned, actual: round(clamp(planned * (1 + beat / 100) * clamp(rng.normal(1, 0.04), 0.9, 1.1), 0, 100), 0) };
+  });
+}
+export const productLaunches: ProductLaunch[] = (() => {
+  const lr = new Rng("launches");
+  const specs: { name: string; products: string[]; persona: PersonaName; beat: number; markets: string[]; risk: "Low" | "Medium" | "High"; cqs: number }[] = [
+    { name: "Travel Weekender Capsule", products: ["Villa Wideleg", "DreamKnit Layer", "Transit Commuter Shirt"], persona: "Travel Weekender", beat: 18, markets: ["New York", "Miami", "Austin"], risk: "Medium", cqs: 79 },
+    { name: "DreamKnit Comfort Layer", products: ["DreamKnit Layer"], persona: "Studio Minimalist", beat: 11, markets: ["Denver", "Boston", "Seattle"], risk: "Low", cqs: 82 },
+    { name: "Cloudridge Trail Bottoms", products: ["Cloudridge Lined Pant"], persona: "Trail & Recovery", beat: -7, markets: ["Salt Lake City", "Denver"], risk: "High", cqs: 74 },
+    { name: "Strato Performance Polo", products: ["Strato Tech Polo"], persona: "Modern Dad Uniform", beat: 6, markets: ["Dallas", "Chicago"], risk: "Low", cqs: 77 },
+  ];
+  return specs.map((s, i) => {
+    const forecastRevenue = lr.int(1_400_000, 3_200_000);
+    const actualRevenue = Math.round(forecastRevenue * (1 + s.beat / 100));
+    const newShare = round(s.beat > 12 ? lr.range(0.24, 0.34) : lr.range(0.3, 0.46), 2);
+    return {
+      launchId: `LN-${String(i + 1).padStart(3, "0")}`,
+      launchName: s.name,
+      launchDate: dayOffset(-lr.int(30, 140)),
+      productIds: s.products.map((n) => products.find((p) => p.productName === n)?.productId ?? n),
+      category: products.find((p) => p.productName === s.products[0])?.category ?? "Bottoms",
+      forecastRevenue,
+      actualRevenue,
+      forecastAccuracy: round(100 - Math.abs(s.beat) * 0.9, 1),
+      newCustomerContribution: newShare,
+      repeatCustomerContribution: round(1 - newShare, 2),
+      sellThroughRate: round(clamp(0.6 + s.beat / 200 + lr.normal(0, 0.05), 0.35, 0.95), 2),
+      sizeAvailabilityRate: round(s.risk === "High" ? lr.range(0.45, 0.65) : lr.range(0.7, 0.95), 2),
+      returnRate: round(lr.range(0.07, 0.13), 2),
+      grossMargin: Math.round(actualRevenue * 0.585),
+      marketingSpend: Math.round(actualRevenue * lr.range(0.18, 0.26)),
+      primaryPersona: s.persona,
+      topMarkets: s.markets,
+      inventoryRisk: s.risk,
+      customerQualityScore: s.cqs,
+      recommendedAction: s.beat < 0 ? "Hold incremental buy; reassess demand" : newShare < 0.3 ? "Shift creative to new-customer acquisition; protect XS/S inventory" : "Scale — strong, balanced demand",
+      sellThroughCurve: launchCurve(lr, s.beat),
+    } satisfies ProductLaunch;
+  });
+})();
+
+// ───────────────────────────────────────────────────────────────────────────
+// WEATHER-TRIGGERED DEMAND
+// ───────────────────────────────────────────────────────────────────────────
+export const weatherDemandTriggers: WeatherDemandTrigger[] = (() => {
+  const wr = new Rng("weather");
+  const specs: { market: string; event: string; tempChange: number; precip: number; category: WeatherDemandTrigger["productCategory"]; products: string[]; lift: number; urgency: "High" | "Medium" | "Low"; channel: string; message: string }[] = [
+    { market: "Denver", event: "Cold front (−12°F)", tempChange: -12, precip: 30, category: "Outerwear", products: ["Canyon Insulated Jacket", "Restore Half Zip", "Sunday Performance Jogger"], lift: 18, urgency: "High", channel: "Email · SMS · Paid Social", message: "Recovery layers + cold-weather joggers" },
+    { market: "Austin", event: "Heat wave (+9°F)", tempChange: 9, precip: 5, category: "Shorts", products: ["Kore Short", "Coastal Training Tank", "Strato Tech Tee"], lift: 14, urgency: "Medium", channel: "Paid Social · Onsite", message: "Lightweight tees + shorts for the heat" },
+    { market: "Miami", event: "Resort season onset", tempChange: 4, precip: 8, category: "Tops", products: ["Coastal Training Tank", "Villa Wideleg"], lift: 12, urgency: "Medium", channel: "Email · Influencer", message: "Travel & coastal capsule" },
+    { market: "Seattle", event: "Rainy stretch (10 days)", tempChange: -3, precip: 78, category: "Layers", products: ["Halo Essential Hoodie", "DreamKnit Layer", "Restore Half Zip"], lift: 11, urgency: "Medium", channel: "Email · Onsite", message: "Comfort, lounge, and layering" },
+    { market: "Salt Lake City", event: "Ski season open", tempChange: -8, precip: 55, category: "Layers", products: ["Restore Half Zip", "Canyon Insulated Jacket"], lift: 16, urgency: "High", channel: "Paid Search · Email", message: "Recovery & cold-weather layers" },
+    { market: "Boston", event: "First freeze", tempChange: -10, precip: 20, category: "Outerwear", products: ["Canyon Insulated Jacket", "Meta Pant"], lift: 13, urgency: "Medium", channel: "Email · SMS", message: "Commuter layers for the cold" },
+  ];
+  return specs.map((s, i) => ({
+    triggerId: `WX-${String(i + 1).padStart(3, "0")}`,
+    date: dayOffset(-wr.int(0, 5)),
+    market: s.market,
+    weatherEvent: s.event,
+    temperatureChange: s.tempChange,
+    precipitationIndex: s.precip,
+    productCategory: s.category,
+    recommendedProducts: s.products,
+    expectedDemandLift: s.lift,
+    recommendedChannel: s.channel,
+    recommendedMessage: s.message,
+    urgency: s.urgency,
+    confidence: round(wr.range(70, 84), 0),
+    owner: "Growth / Lifecycle",
+    expectedRevenueImpact: wr.int(60000, 240000),
+  }));
+})();
+
+// ───────────────────────────────────────────────────────────────────────────
+// DIGITAL SHELF / PDP QUALITY
+// ───────────────────────────────────────────────────────────────────────────
+function buildPdpQuality(): PdpQuality[] {
+  const pr = new Rng("pdp");
+  return products.map((prod) => {
+    const traffic = Math.round(prod.unitsSold * pr.range(7, 14));
+    const fitClarity = round(clamp(82 - prod.returnRate * 220 + pr.normal(0, 5), 30, 95), 0);
+    const imageCompleteness = round(clamp(70 + pr.normal(0, 14), 40, 98), 0);
+    const video = pr.chance(0.45);
+    const reviewCount = pr.int(40, 1400);
+    const reviewRating = round(pr.range(4.1, 4.8), 1);
+    const descQuality = round(clamp(72 + pr.normal(0, 12), 45, 95), 0);
+    const loadSpeed = round(clamp(74 + pr.normal(0, 12), 45, 96), 0);
+    const score = round(
+      clamp(
+        imageCompleteness * 0.16 + (video ? 100 : 55) * 0.1 + clamp(reviewCount / 14, 0, 100) * 0.12 +
+          (reviewRating / 5) * 100 * 0.1 + fitClarity * 0.16 + descQuality * 0.1 + prod.sellThrough * 100 * 0.06 +
+          loadSpeed * 0.1 + (100 - prod.returnRate * 400) * 0.1,
+        25,
+        98,
+      ),
+      0,
+    );
+    return {
+      productId: prod.productId,
+      productName: prod.productName,
+      traffic,
+      conversionRate: round(clamp(0.02 + (score - 60) * 0.0006 + pr.normal(0, 0.003), 0.012, 0.06), 4),
+      addToCartRate: round(clamp(0.18 + (score - 60) * 0.002, 0.1, 0.34), 3),
+      imageCompletenessScore: imageCompleteness,
+      videoAvailable: video,
+      reviewCount,
+      reviewRating,
+      fitClarityScore: fitClarity,
+      sizeGuideEngagement: round(pr.range(0.14, 0.4), 2),
+      descriptionQualityScore: descQuality,
+      colorAvailabilityRate: round(pr.range(0.7, 0.98), 2),
+      sizeAvailabilityRate: round(pr.range(0.6, 0.97), 2),
+      loadSpeedScore: loadSpeed,
+      returnRate: prod.returnRate,
+      pdpQualityScore: score,
+      revenueOpportunity: Math.round((85 - score) > 0 ? (85 - score) * traffic * 0.9 : traffic * 0.4),
+      recommendedAction: score < 70 ? "Fix PDP: fit clarity + visual merchandising + review snippets" : score < 80 ? "Enhance fit guidance & add video" : "Maintain — strong digital shelf",
+    } satisfies PdpQuality;
+  }).sort((a, b) => a.pdpQualityScore - b.pdpQualityScore);
+}
+export const pdpQuality = buildPdpQuality();
+
+// ───────────────────────────────────────────────────────────────────────────
+// EXECUTIVE ALERTS
+// ───────────────────────────────────────────────────────────────────────────
+export const executiveAlerts: ExecutiveAlert[] = [
+  {
+    alertId: "AL-001", type: "Market opportunity signal", severity: "Opportunity",
+    title: "Austin demand signal rising faster than revenue capture",
+    businessImpact: "+$740K potential 90-day revenue", rootCause: "Search/social demand accelerating ahead of localized presence",
+    recommendedAction: "Approve localized Austin activation test", owner: "Ecommerce / Brand Marketing",
+    evidence: ["Opportunity score 91", "Traffic +33% YoY", "Wellness/run density over-index"],
+    measurementPlan: "Matched-market test vs Nashville, SLC, Denver", page: "/market-opportunity",
+  },
+  {
+    alertId: "AL-002", type: "Inventory cap", severity: "Revenue at Risk",
+    title: "Sunday Performance Jogger size breaks suppressing mountain-market revenue",
+    businessImpact: "$420K recoverable", rootCause: "Men's M/L stockouts in Denver & Salt Lake City",
+    recommendedAction: "Replenish and trigger back-in-stock flow", owner: "Merchandising / Planning / CRM",
+    evidence: ["Waitlist signups rising", "Size availability < 45%", "PDP views while OOS elevated"],
+    measurementPlan: "Track recovered revenue vs baseline stockouts", page: "/merchandising",
+  },
+  {
+    alertId: "AL-003", type: "New customer quality decline", severity: "Watch",
+    title: "Paid social new-customer volume up, quality down",
+    businessImpact: "LTV:CAC deterioration risk", rootCause: "Prospecting expansion reaching lower-quality cohorts",
+    recommendedAction: "Shift optimization toward Customer Quality Score", owner: "Growth Marketing",
+    evidence: ["Paid social CQS 71 vs blended 78", "Return rate +1.4pts", "Repeat probability softening"],
+    measurementPlan: "Geo holdout on value-based bidding", page: "/marketing-efficiency",
+  },
+  {
+    alertId: "AL-004", type: "Demand surge", severity: "Opportunity",
+    title: "DreamKnit demand accelerating in cold-weather markets",
+    businessImpact: "+$310K 60-day revenue", rootCause: "Search & social velocity rising in Denver, Boston, Chicago, Seattle",
+    recommendedAction: "Launch localized layering lifecycle + paid social", owner: "Growth / Lifecycle",
+    evidence: ["Search velocity +41%", "Sentiment rising", "Persona fit: Travel Weekender"],
+    measurementPlan: "Matched-market creative test", page: "/external-demand",
+  },
+  {
+    alertId: "AL-005", type: "Conversion anomaly", severity: "Revenue at Risk",
+    title: "Mobile PDP load time dragging conversion",
+    businessImpact: "$680K / month at risk", rootCause: "Mobile PDP image load correlates with bounce",
+    recommendedAction: "Ship mobile PDP performance fix", owner: "Ecommerce Tech",
+    evidence: ["Mobile 62% of sessions, −38% vs desktop conv.", "PDP→cart drop-off concentrated on mobile"],
+    measurementPlan: "Before/after phased rollout", page: "/conversion-funnel",
+  },
+  {
+    alertId: "AL-006", type: "Product launch under-performance", severity: "Watch",
+    title: "Cloudridge Trail Bottoms reading below forecast",
+    businessImpact: "−7% vs launch plan", rootCause: "Soft early sell-through + size availability gaps",
+    recommendedAction: "Hold incremental buy; reassess demand", owner: "Merch Analytics",
+    evidence: ["Early-read −7% vs plan", "Size availability 45–65%"],
+    measurementPlan: "Launch early-read vs comparable curves", page: "/merchandising",
+  },
+];
+
+export const incrementalRevenueIdentified = experiments.reduce((s, e) => s + e.incrementalRevenue, 0);

@@ -229,6 +229,44 @@ export function EventSimulator() {
         </Card>
       </div>
 
+      {/* Incrementality, control markets & landing page */}
+      <Card className="border-ocean/25 bg-gradient-to-br from-ocean-soft/30 to-surface">
+        <CardContent className="pt-5">
+          <SectionHeader question="Is this incremental — and how would we route and measure it?" hint="Attributed vs incremental, recommended control markets, customer-quality forecast, and the on-site landing page." />
+          <div className="grid gap-4 lg:grid-cols-4">
+            <div className="rounded-xl border border-border bg-surface p-3.5">
+              <div className="text-[11px] uppercase tracking-wide text-ink-muted">Attributed (event + halo)</div>
+              <div className="tabular mt-1 text-[18px] font-semibold text-ink">{compactCurrency(out.totalRevenue)}</div>
+              <div className="mt-1.5 text-[11px] uppercase tracking-wide text-ink-muted">Est. incremental (~72%)</div>
+              <div className="tabular text-[18px] font-semibold text-sage-deep">{compactCurrency(Math.round(out.totalRevenue * 0.72))}</div>
+            </div>
+            <div className="rounded-xl border border-border bg-surface p-3.5">
+              <div className="text-[11px] uppercase tracking-wide text-ink-muted">Recommended control markets</div>
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {market.recommendedControlMarkets.map((m) => (
+                  <Badge key={m} tone="ocean">{m}</Badge>
+                ))}
+              </div>
+              <div className="mt-2 text-[10.5px] text-ink-muted">Matched-market incrementality design</div>
+            </div>
+            <div className="rounded-xl border border-border bg-surface p-3.5">
+              <div className="text-[11px] uppercase tracking-wide text-ink-muted">Customer-quality forecast</div>
+              <div className="tabular mt-1 text-[24px] font-semibold leading-none text-sage-deep">
+                {Math.round(recoPersonas.reduce((s, pn) => s + (personas.find((p) => p.personaName === pn)?.customerQualityScore ?? 75), 0) / recoPersonas.length)}
+              </div>
+              <div className="mt-1.5 text-[11px] text-ink-muted">vs ~71 paid-social average</div>
+            </div>
+            <div className="rounded-xl border border-border bg-surface p-3.5">
+              <div className="text-[11px] uppercase tracking-wide text-ink-muted">QR → landing page</div>
+              <p className="mt-1 text-[12.5px] leading-snug text-ink-secondary">Route QR scans & creator links to a curated on-site edit to measure offline-to-online sales.</p>
+              <Link to="/community-commerce" className="mt-2 inline-block">
+                <Button variant="outline" size="sm">Open Community Commerce</Button>
+              </Link>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
       {/* Scenario comparison */}
       <Card>
         <CardContent className="pt-5">

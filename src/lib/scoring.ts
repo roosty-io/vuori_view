@@ -88,6 +88,73 @@ export const EVENT_TYPE_PRIORS: Record<EventType, { conversionRate: number; aov:
   "Recovery studio partnership": { conversionRate: 0.59, aov: 146, leadCaptureRate: 0.7 },
 };
 
+// ── Customer Quality Score (cross-app metric) ───────────────────────────────
+export const CQS_WEIGHTS = {
+  ltv: 0.25,
+  margin: 0.15,
+  repeat: 0.15,
+  returnInverse: 0.12,
+  promoInverse: 0.1,
+  categoryExpansion: 0.08,
+  engagement: 0.07,
+  affinityDepth: 0.05,
+  timeToSecond: 0.03,
+} as const;
+
+export interface CqsInputs {
+  ltv: number; // 0..100 (predicted 12-mo LTV index)
+  margin: number; // 0..100 gross-margin contribution
+  repeat: number; // 0..100 repeat-purchase probability
+  returnInverse: number; // 0..100 (100 = low return risk)
+  promoInverse: number; // 0..100 (100 = low promo dependency)
+  categoryExpansion: number; // 0..100
+  engagement: number; // 0..100 email/SMS engagement
+  affinityDepth: number; // 0..100 product affinity depth
+  timeToSecond: number; // 0..100 (100 = fast second purchase)
+}
+
+/** Weighted 0–100 customer quality score — "the right customers, not just more." */
+export function customerQualityScore(i: CqsInputs): number {
+  return round(
+    i.ltv * CQS_WEIGHTS.ltv +
+      i.margin * CQS_WEIGHTS.margin +
+      i.repeat * CQS_WEIGHTS.repeat +
+      i.returnInverse * CQS_WEIGHTS.returnInverse +
+      i.promoInverse * CQS_WEIGHTS.promoInverse +
+      i.categoryExpansion * CQS_WEIGHTS.categoryExpansion +
+      i.engagement * CQS_WEIGHTS.engagement +
+      i.affinityDepth * CQS_WEIGHTS.affinityDepth +
+      i.timeToSecond * CQS_WEIGHTS.timeToSecond,
+    0,
+  );
+}
+
+export const CQS_LABELS: { key: keyof CqsInputs; label: string; weight: number }[] = [
+  { key: "ltv", label: "Predicted 12-mo LTV", weight: 25 },
+  { key: "margin", label: "Gross-margin contribution", weight: 15 },
+  { key: "repeat", label: "Repeat-purchase probability", weight: 15 },
+  { key: "returnInverse", label: "Return risk (inverse)", weight: 12 },
+  { key: "promoInverse", label: "Promo dependency (inverse)", weight: 10 },
+  { key: "categoryExpansion", label: "Category expansion potential", weight: 8 },
+  { key: "engagement", label: "Email / SMS engagement", weight: 7 },
+  { key: "affinityDepth", label: "Product affinity depth", weight: 5 },
+  { key: "timeToSecond", label: "Time-to-second-purchase", weight: 3 },
+];
+
+/** Gross profit after estimated returns, commission, and discount impact. */
+export function returnAdjustedGrossProfit(args: {
+  revenue: number;
+  marginRate: number;
+  returnRate: number;
+  commission?: number;
+  discountRate?: number;
+}): number {
+  const { revenue, marginRate, returnRate, commission = 0, discountRate = 0 } = args;
+  const netRevenue = revenue * (1 - returnRate) * (1 - discountRate);
+  const handlingCost = revenue * returnRate * 0.08; // reverse-logistics drag
+  return Math.round(netRevenue * marginRate - commission - handlingCost);
+}
+
 // ── Persona confidence (behavioral signal matching) ─────────────────────────
 export interface PersonaSignalWeights {
   categoryViews: number;
@@ -198,15 +265,22 @@ export function statusTone(
       return "warning";
     case "At Risk":
     case "Not Recommended Yet":
+    case "Stop":
       return "negative";
     case "Opportunity":
     case "Ready for POC":
     case "Active":
+    case "Scale":
       return "sage";
     case "Discovery":
     case "Needs Data":
     case "Proposed":
+    case "Running":
+    case "Reading Results":
       return "info";
+    case "Iterate":
+    case "Needs More Data":
+      return "warning";
     default:
       return "neutral";
   }

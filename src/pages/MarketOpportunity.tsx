@@ -132,7 +132,23 @@ export function MarketOpportunity() {
               </div>
             </div>
 
-            <div className="mt-auto pt-4">
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              <Stat label="Customer quality" value={String(market.customerQualityScore)} />
+              <Stat label="Community opp." value={String(market.communityCommerceOpportunity)} />
+              <Stat label="Test readiness" value={String(market.incrementalityReadiness)} />
+            </div>
+
+            <div className="mt-3 rounded-lg border border-ocean/25 bg-ocean-soft/30 p-2.5">
+              <div className="text-[11px] font-medium uppercase tracking-wide text-ocean">Recommended control markets</div>
+              <div className="mt-1 flex flex-wrap gap-1">
+                {market.recommendedControlMarkets.map((m) => (
+                  <span key={m} className="rounded-md bg-surface px-2 py-0.5 text-[11.5px] text-ink-secondary">{m}</span>
+                ))}
+              </div>
+              <div className="mt-1 text-[10.5px] text-ink-muted">For a matched-market incrementality test</div>
+            </div>
+
+            <div className="mt-auto pt-3">
               <div className="rounded-lg bg-clay-soft/50 p-3">
                 <div className="text-[11px] font-medium uppercase tracking-wide text-clay">Recommended action</div>
                 <p className="mt-0.5 text-[13px] font-medium text-ink">{market.recommendedAction}</p>

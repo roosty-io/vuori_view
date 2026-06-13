@@ -55,8 +55,8 @@ export const GUIDED_STEPS: GuidedStep[] = [
     page: "/community-commerce",
     pageName: "Community Commerce Lab",
     narrative:
-      "The Austin activation routes QR scans and creator links to a curated on-site landing page (/austin-run-club), letting Vuori measure offline-to-online sales, new-customer capture, commission efficiency, and 90-day ecommerce halo.",
-    takeaway: "Creators and events become attributable, incremental DTC revenue.",
+      "The Austin activation routes QR scans and creator links to a curated on-site landing page (/austin-run-club), letting Vuori measure offline-to-online sales, new-customer capture, commission efficiency, customer quality, and 90-day ecommerce halo.",
+    takeaway: "Creators and events become attributable, incremental, high-quality DTC revenue.",
   },
   {
     title: "Right message, right moment",

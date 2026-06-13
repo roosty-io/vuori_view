@@ -5,8 +5,8 @@ import { Card, CardContent, SectionHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { Progress } from "@/components/ui/Progress";
 import { FunnelChart } from "@/components/charts/FunnelChart";
-import { deviceFunnel, funnel, funnelOpportunities, siteSearchTerms } from "@/data/syntheticData";
-import { compactCurrency, percentRaw, signedPercent } from "@/lib/formatters";
+import { deviceFunnel, funnel, funnelOpportunities, onsiteSearchIntent, siteSearchTerms } from "@/data/syntheticData";
+import { compactCurrency, compactNumber, percentRaw, signedPercent } from "@/lib/formatters";
 
 const DEVICE_ICON: Record<string, React.ComponentType<{ className?: string }>> = {
   Mobile: Smartphone,
@@ -155,6 +155,50 @@ export function ConversionFunnel() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Onsite Search & Intent Intelligence */}
+      <Card>
+        <CardContent className="pt-5">
+          <SectionHeader question="What are shoppers telling Vuori they want before they purchase?" hint="Onsite search intent, zero-result gaps, and the content/landing-page opportunities behind them." />
+          <div className="mb-3 rounded-lg bg-ocean-soft/40 p-3 text-[12.5px] leading-relaxed text-ink-secondary">
+            <span className="font-medium text-ink">Insight — </span>Searches for "travel pants" are up 46% in Boston, New York, and London, but conversion is below average due to fragmented product discovery. Create a Travel &amp; Commuter landing page and test it against current search results.
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="border-b border-border text-left text-[11px] uppercase tracking-wide text-ink-muted">
+                  <th className="py-2 pr-3 font-medium">Query · Intent</th>
+                  <th className="py-2 pr-3 font-medium">Market</th>
+                  <th className="py-2 pr-3 text-right font-medium">Sessions</th>
+                  <th className="py-2 pr-3 text-right font-medium">Conv.</th>
+                  <th className="py-2 pr-3 text-right font-medium">Zero-result</th>
+                  <th className="py-2 pr-3 font-medium">Demand</th>
+                  <th className="py-2 pl-3 font-medium">Recommended action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {onsiteSearchIntent.map((q) => (
+                  <tr key={q.searchId} className="border-b border-border/60 align-top hover:bg-surface-2/40">
+                    <td className="py-2.5 pr-3">
+                      <div className="flex items-center gap-1.5 font-medium text-ink">
+                        "{q.query}"
+                        {q.contentGap && <Badge tone="warning">Content gap</Badge>}
+                      </div>
+                      <div className="text-[11px] text-ink-muted">{q.normalizedIntent} · {q.relatedProducts.join(", ")}</div>
+                    </td>
+                    <td className="py-2.5 pr-3 text-ink-secondary">{q.market}</td>
+                    <td className="tabular py-2.5 pr-3 text-right text-ink-secondary">{compactNumber(q.sessions)}</td>
+                    <td className="tabular py-2.5 pr-3 text-right text-ink-secondary">{percentRaw(q.conversionRate * 100)}</td>
+                    <td className="tabular py-2.5 pr-3 text-right"><span className={q.zeroResultRate > 0.15 ? "font-semibold text-negative" : "text-ink-secondary"}>{percentRaw(q.zeroResultRate * 100, 0)}</span></td>
+                    <td className="py-2.5 pr-3"><div className="flex items-center gap-2"><Progress value={q.demandSignalScore} tone={q.demandSignalScore >= 70 ? "positive" : "sage"} className="w-12" /><span className="tabular text-[12px] text-ink-secondary">{q.demandSignalScore}</span></div></td>
+                    <td className="py-2.5 pl-3 text-[12px] text-ink-secondary">{q.recommendedAction}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }

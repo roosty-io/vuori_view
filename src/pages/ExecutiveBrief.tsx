@@ -23,7 +23,7 @@ const TOP_INSIGHTS = [
   { t: "Ecommerce traffic +33% YoY in Austin", d: "Demand is forming faster than revenue capture — a localization window before competitors saturate." },
   { t: "Repeat purchase rate 14% above average", d: "Strong retention signal supports lifecycle-led activation economics." },
   { t: "Wellness & run-club density over-index", d: "A run club + recovery studio activation matches the local lifestyle and persona mix." },
-  { t: "Persona fit is strong and specific", d: "Performance Commuter, Wellness Socialite, and Studio Minimalist give a clear assortment and creative blueprint." },
+  { t: "It acquires higher-quality customers", d: "Austin Run Club leads score 86 on Customer Quality Score vs a ~71 paid-social prospecting average — stronger repeat probability and lower promo dependency." },
 ];
 
 const PLAN = [
@@ -112,8 +112,10 @@ export function ExecutiveBrief() {
                 </div>
                 <p className="text-[15px] font-medium leading-relaxed text-ink">
                   Approve a controlled Austin activation test: a 3-day run club + recovery studio event with localized
-                  paid social, onsite personalization, and post-event email/SMS lifecycle flows — measured against
-                  matched control markets before any scale decision.
+                  paid social, onsite personalization, and post-event email/SMS lifecycle flows. Route QR scans and
+                  creator links to a curated on-site <span className="font-semibold">/austin-run-club</span> landing
+                  page, and measure against matched control markets (Nashville, Salt Lake City, Denver) before any
+                  scale decision.
                 </p>
               </CardContent>
             </Card>
@@ -167,9 +169,12 @@ export function ExecutiveBrief() {
                   <ClipboardList className="h-3.5 w-3.5 text-ocean" /> Test design
                 </div>
                 <p className="text-[13.5px] leading-relaxed text-ink-secondary">
-                  Austin vs matched control markets. Measure lead capture, new-customer CAC, conversion lift, repeat
-                  purchase rate, incremental revenue, and 90-day ecommerce halo. Hold spend constant in control markets;
-                  validate halo with a clean difference-in-differences read before scaling.
+                  Austin vs matched control markets (Nashville, Salt Lake City, Denver; similarity score 88). Measure
+                  lead capture, new-customer CAC, conversion lift, repeat purchase rate, Customer Quality Score, and the
+                  90-day ecommerce halo. Distinguish <span className="font-medium text-ink">attributed</span> ($184K)
+                  from <span className="font-medium text-ink">incremental</span> revenue (~$132K) via difference-in-differences;
+                  decision rule: scale if incremental lift exceeds the 4.5% MDE at ≥80% confidence. Human approval and
+                  the affiliate/influencer compliance checklist are required before launch.
                 </p>
               </CardContent>
             </Card>
@@ -184,6 +189,8 @@ export function ExecutiveBrief() {
                   {[
                     { label: "Event-period revenue", value: "$180K" },
                     { label: "90-day ecommerce halo", value: "$560K" },
+                    { label: "Attributed → incremental", value: "$184K → $132K" },
+                    { label: "Customer Quality Score", value: "86" },
                     { label: "Leads captured", value: "2,900" },
                     { label: "Event ROI", value: "3.7x" },
                   ].map((m) => (

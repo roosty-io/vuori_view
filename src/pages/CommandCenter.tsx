@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { RevenueForecastChart } from "@/components/charts/RevenueForecastChart";
 import { WaterfallChart } from "@/components/charts/WaterfallChart";
+import { ExecutiveAlerts } from "@/components/ui/ExecutiveAlerts";
 import { CHART } from "@/components/charts/chartUtils";
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { useFilters } from "@/hooks/useFilters";
@@ -19,7 +20,8 @@ import {
   pctChange,
   revenueWaterfall,
 } from "@/data/calculations";
-import { austin, revenueTimeline } from "@/data/syntheticData";
+import { returnAdjustedGrossProfit } from "@/lib/scoring";
+import { austin, executiveAlerts, incrementalRevenueIdentified, personas, revenueTimeline } from "@/data/syntheticData";
 import type { DailyMetric } from "@/data/types";
 import {
   compactCurrency,
@@ -53,6 +55,9 @@ export function CommandCenter() {
   const priorCac = prior.newCustomers > 0 ? prior.marketingSpend / prior.newCustomers : 0;
   const priorLtvCac = priorCac > 0 ? ltv / priorCac : 0;
   const invAtRisk = inventoryRevenueAtRisk();
+  const blendedCqs = Math.round(personas.reduce((s, p) => s + p.share * p.customerQualityScore, 0));
+  const returnAdjGp = returnAdjustedGrossProfit({ revenue: current.revenue, marginRate: current.grossMarginRate, returnRate: 0.092 });
+  const priorReturnAdjGp = returnAdjustedGrossProfit({ revenue: prior.revenue, marginRate: prior.grossMarginRate, returnRate: 0.092 });
 
   const newRepeatSeries = useMemo(() => {
     const n = 14;
@@ -145,7 +150,31 @@ export function CommandCenter() {
       tooltip: "Blended predicted lifetime value vs blended acquisition cost.",
     },
     {
-      title: "Inventory revenue at risk",
+      title: "Customer Quality Score",
+      value: String(blendedCqs),
+      delta: 2.1,
+      deltaLabel: "vs prior",
+      sparkline: weekly(series, (d) => d.repeatRevenue / d.revenue),
+      tooltip: "Blended quality of acquired customers (0–100): LTV, margin, repeat, return & promo inverse, engagement.",
+      accent: "sage" as const,
+    },
+    {
+      title: "Return-adj. gross profit",
+      value: compactCurrency(returnAdjGp),
+      delta: pctChange(returnAdjGp, priorReturnAdjGp),
+      deltaLabel: "vs prior",
+      sparkline: weekly(series, (d) => d.grossMargin),
+      tooltip: "Gross profit after estimated returns, exchanges, commission, and discount impact.",
+    },
+    {
+      title: "Incremental revenue identified",
+      value: compactCurrency(incrementalRevenueIdentified),
+      status: { label: "Validated", tone: "positive" as const },
+      tooltip: "Incremental DTC revenue validated or reading across the experiment portfolio (vs attributed).",
+      accent: "ocean" as const,
+    },
+    {
+      title: "Revenue at risk · inventory",
       value: compactCurrency(invAtRisk),
       status: { label: "Watch", tone: "warning" as const },
       invert: true,
@@ -201,6 +230,8 @@ export function CommandCenter() {
           </>
         }
       />
+
+      <ExecutiveAlerts alerts={executiveAlerts} />
 
       {/* KPI grid */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">

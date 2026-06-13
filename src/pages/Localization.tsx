@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { CalendarRange, CloudSun, Globe2, Palette, ShieldAlert, Shirt } from "lucide-react";
+import { CalendarRange, CloudSun, CloudRain, Globe2, Palette, ShieldAlert, Shirt, Wind } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { HeroPanel } from "@/components/ui/HeroPanel";
 import { Card, CardContent, SectionHeader } from "@/components/ui/Card";
@@ -16,7 +16,9 @@ import {
   markets,
   personaColorMatrix,
   personas,
+  weatherDemandTriggers,
 } from "@/data/syntheticData";
+import { compactCurrency, signed } from "@/lib/formatters";
 
 interface Playbook {
   overIndexCategories: string[];
@@ -203,6 +205,45 @@ export function Localization() {
           <SectionHeader question="Which colors resonate by market?" hint="Color affinity index 0–100, weighted by each market's persona mix." />
           <div className="mb-2 flex items-center gap-2 text-[11px] text-ink-muted"><Palette className="h-3.5 w-3.5" /> Deeper cells = stronger local color preference</div>
           <ColorPreferenceHeatmap rows={marketColorRows} columns={COLORS} tone="clay" rowHeader="Market" compact />
+        </CardContent>
+      </Card>
+
+      {/* Weather-triggered demand */}
+      <Card>
+        <CardContent className="pt-5">
+          <SectionHeader question="How should local weather shape product, creative, and lifecycle timing?" hint="Weather-triggered demand signals with recommended products, channel, and message." />
+          <div className="mb-3 rounded-lg bg-ocean-soft/40 p-3 text-[12.5px] leading-relaxed text-ink-secondary">
+            <span className="font-medium text-ink">Insight — </span>A 12° temperature drop in Denver is expected to lift outerwear and layering demand ~18% over the next 7 days. Recommend localized email/SMS and paid social featuring recovery layers and cold-weather joggers.
+          </div>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {weatherDemandTriggers.map((w) => {
+              const Icon = w.precipitationIndex > 50 ? CloudRain : w.temperatureChange < 0 ? Wind : CloudSun;
+              return (
+                <div key={w.triggerId} className="rounded-xl border border-border bg-surface p-3.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <Icon className="h-4 w-4 text-ocean" />
+                      <span className="text-[13px] font-semibold text-ink">{w.market}</span>
+                    </div>
+                    <Badge tone={w.urgency === "High" ? "negative" : w.urgency === "Medium" ? "warning" : "neutral"}>{w.urgency}</Badge>
+                  </div>
+                  <div className="mt-1 text-[12px] text-ink-secondary">{w.weatherEvent}</div>
+                  <div className="mt-2 flex items-center justify-between rounded-lg bg-surface-2/50 px-2.5 py-1.5">
+                    <span className="text-[11px] text-ink-muted">Expected demand lift</span>
+                    <span className="tabular text-[13px] font-semibold text-sage-deep">{signed(w.expectedDemandLift)}%</span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {w.recommendedProducts.map((p) => <span key={p} className="rounded-md bg-surface-2/70 px-1.5 py-0.5 text-[11px] text-ink-secondary">{p}</span>)}
+                  </div>
+                  <p className="mt-2 text-[12px] leading-snug text-ink-secondary"><span className="font-medium text-ink">"{w.recommendedMessage}"</span></p>
+                  <div className="mt-1.5 flex items-center justify-between text-[11px] text-ink-muted">
+                    <span>{w.recommendedChannel}</span>
+                    <span className="tabular">{compactCurrency(w.expectedRevenueImpact)} · {w.confidence}%</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </CardContent>
       </Card>
     </div>

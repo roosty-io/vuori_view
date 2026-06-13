@@ -19,7 +19,7 @@ import { Badge } from "@/components/ui/Badge";
 import { Select } from "@/components/ui/Select";
 import { Slider } from "@/components/ui/Slider";
 import { CHART, TooltipShell, axisProps } from "@/components/charts/chartUtils";
-import { channels } from "@/data/syntheticData";
+import { channels, creativePerformance } from "@/data/syntheticData";
 import { compactCurrency, compactNumber, multiplier, percent } from "@/lib/formatters";
 
 export function MarketingEfficiency() {
@@ -84,11 +84,12 @@ export function MarketingEfficiency() {
                   <th className="py-2 pr-3 text-right font-medium">Spend</th>
                   <th className="py-2 pr-3 text-right font-medium">Revenue</th>
                   <th className="py-2 pr-3 text-right font-medium">ROAS</th>
+                  <th className="py-2 pr-3 text-right font-medium">R-adj ROAS</th>
                   <th className="py-2 pr-3 text-right font-medium">CAC</th>
                   <th className="py-2 pr-3 text-right font-medium">LTV:CAC</th>
                   <th className="py-2 pr-3 text-right font-medium">New %</th>
-                  <th className="py-2 pr-3 text-right font-medium">Payback</th>
-                  <th className="py-2 pl-3 text-right font-medium">Quality</th>
+                  <th className="py-2 pr-3 text-right font-medium">Inc %</th>
+                  <th className="py-2 pl-3 text-right font-medium">CQS</th>
                 </tr>
               </thead>
               <tbody>
@@ -98,12 +99,13 @@ export function MarketingEfficiency() {
                     <td className="tabular py-2.5 pr-3 text-right text-ink-secondary">{compactCurrency(c.spend)}</td>
                     <td className="tabular py-2.5 pr-3 text-right text-ink-secondary">{compactCurrency(c.attributedRevenue)}</td>
                     <td className="tabular py-2.5 pr-3 text-right font-medium text-ink">{multiplier(c.roas)}</td>
+                    <td className="tabular py-2.5 pr-3 text-right text-ink-secondary">{multiplier(c.returnAdjustedRoas)}</td>
                     <td className="tabular py-2.5 pr-3 text-right text-ink-secondary">${c.cac}</td>
                     <td className="tabular py-2.5 pr-3 text-right text-ink-secondary">{multiplier(c.ltvCacRatio)}</td>
                     <td className="tabular py-2.5 pr-3 text-right text-ink-secondary">{percent(c.newCustomerShare, 0)}</td>
-                    <td className="tabular py-2.5 pr-3 text-right text-ink-secondary">{c.paybackMonths}mo</td>
+                    <td className="tabular py-2.5 pr-3 text-right text-ink-secondary">{percent(c.incrementalShare, 0)}</td>
                     <td className="py-2.5 pl-3 text-right">
-                      <Badge tone={c.qualityScore >= 85 ? "positive" : c.qualityScore >= 70 ? "sage" : "warning"}>{c.qualityScore}</Badge>
+                      <Badge tone={c.customerQualityScore >= 85 ? "positive" : c.customerQualityScore >= 75 ? "sage" : "warning"}>{c.customerQualityScore}</Badge>
                     </td>
                   </tr>
                 ))}
@@ -172,6 +174,46 @@ export function MarketingEfficiency() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Creative Intelligence */}
+      <Card>
+        <CardContent className="pt-5">
+          <SectionHeader question="Which creative themes drive profitable, high-quality customer growth?" hint="Creative theme performance by persona and market — quality and return-adjusted margin, not just clicks." />
+          <div className="mb-3 rounded-lg bg-sage-soft/40 p-3 text-[12.5px] leading-relaxed text-ink-secondary">
+            <span className="font-medium text-ink">Insight — </span>Work-to-weekend creative drives the highest LTV among Performance Commuter customers, while softness/comfort creative drives stronger conversion among Studio Minimalist and Travel Weekender personas.
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-[13px]">
+              <thead>
+                <tr className="border-b border-border text-left text-[11px] uppercase tracking-wide text-ink-muted">
+                  <th className="py-2 pr-3 font-medium">Creative theme</th>
+                  <th className="py-2 pr-3 font-medium">Persona · Market</th>
+                  <th className="py-2 pr-3 font-medium">Channel</th>
+                  <th className="py-2 pr-3 text-right font-medium">Conv.</th>
+                  <th className="py-2 pr-3 text-right font-medium">ROAS</th>
+                  <th className="py-2 pr-3 text-right font-medium">CQS</th>
+                  <th className="py-2 pr-3 text-right font-medium">Margin a/ returns</th>
+                  <th className="py-2 pl-3 font-medium">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...creativePerformance].sort((a, b) => b.customerQualityScore - a.customerQualityScore).map((c) => (
+                  <tr key={c.creativeId} className="border-b border-border/60 align-top hover:bg-surface-2/40">
+                    <td className="py-2.5 pr-3 font-medium text-ink">{c.creativeTheme}</td>
+                    <td className="py-2.5 pr-3 text-ink-secondary">{c.persona} · {c.market}</td>
+                    <td className="py-2.5 pr-3 text-ink-secondary">{c.channel}</td>
+                    <td className="tabular py-2.5 pr-3 text-right text-ink-secondary">{percent(c.conversionRate, 1)}</td>
+                    <td className="tabular py-2.5 pr-3 text-right text-ink-secondary">{multiplier(c.roas)}</td>
+                    <td className="tabular py-2.5 pr-3 text-right"><span className={c.customerQualityScore >= 80 ? "font-semibold text-sage-deep" : "text-ink-secondary"}>{c.customerQualityScore}</span></td>
+                    <td className="tabular py-2.5 pr-3 text-right text-ink-secondary">{compactCurrency(c.marginAfterReturns)}</td>
+                    <td className="py-2.5 pl-3 text-[12px] text-ink-secondary">{c.recommendedAction}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Budget reallocation simulator */}
       <Card className="border-sage/30 bg-gradient-to-br from-sage-soft/30 to-surface">

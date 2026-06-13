@@ -218,6 +218,16 @@ export function ConsumerIntelligence() {
                   <div className="tabular text-[15px] font-semibold text-ink">{currency(persona.cac)}</div>
                 </div>
               </div>
+              <div className="mt-2 rounded-lg border border-sage/25 bg-sage-soft/40 p-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-medium uppercase tracking-wide text-sage-deep">Customer Quality Score</span>
+                  <span className="tabular text-[18px] font-semibold text-sage-deep">{persona.customerQualityScore}</span>
+                </div>
+                <div className="mt-1.5 flex items-center justify-between text-[11px] text-ink-secondary">
+                  <span>Promo dependency <span className="tabular font-semibold text-ink">{percent(persona.promoDependency, 0)}</span></span>
+                  <span>Return risk <span className="tabular font-semibold text-ink">{percent(persona.returnRisk, 0)}</span></span>
+                </div>
+              </div>
             </div>
 
             <div className="flex-1 space-y-3">

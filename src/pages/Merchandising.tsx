@@ -1,15 +1,24 @@
-import { useMemo } from "react";
-import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
-import { PackageX, Shirt } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { BellRing, Boxes, Monitor, Ruler, Shirt } from "lucide-react";
 import { PageHeader } from "@/components/layout/PageHeader";
 import { HeroPanel } from "@/components/ui/HeroPanel";
 import { Card, CardContent, SectionHeader } from "@/components/ui/Card";
 import { Badge, type BadgeTone } from "@/components/ui/Badge";
 import { Progress } from "@/components/ui/Progress";
+import { Tabs } from "@/components/ui/Tabs";
 import { MarginVelocityScatter } from "@/components/charts/MarginVelocityScatter";
 import { CHART, TooltipShell, axisProps } from "@/components/charts/chartUtils";
-import { inventoryRisk, products } from "@/data/syntheticData";
-import { compactCurrency, percent } from "@/lib/formatters";
+import {
+  inventoryRisk,
+  pdpQuality,
+  productLaunches,
+  products,
+  returnsFitData,
+  waitlistDemand,
+  waitlistRecoverable,
+} from "@/data/syntheticData";
+import { compactCurrency, percent, percentRaw, signed } from "@/lib/formatters";
 import type { Product } from "@/data/types";
 import { groupBy, sumBy } from "@/lib/utils";
 
@@ -20,12 +29,6 @@ const RECO_TONE: Record<Product["recommendation"], BadgeTone> = {
   Protect: "warning",
   Hold: "neutral",
 };
-
-const LAUNCHES = [
-  { name: "DreamKnit Layer", vsPlan: 18, read: "Beating plan — accelerate buy & marketing", status: "Ahead of Plan" },
-  { name: "Cloudridge Lined Pant", vsPlan: -7, read: "Soft early read — hold incremental buy", status: "Watch" },
-  { name: "Restore Half Zip", vsPlan: 11, read: "On margin & velocity — replenish core sizes", status: "On Track" },
-];
 
 export function Merchandising() {
   const byCategory = useMemo(() => {
@@ -197,28 +200,224 @@ export function Merchandising() {
           </CardContent>
         </Card>
 
-        {/* Launch scorecard */}
-        <Card>
+        {/* Back-in-stock summary */}
+        <Card className="border-sage/25 bg-gradient-to-br from-sage-soft/30 to-surface">
           <CardContent className="pt-5">
-            <div className="mb-3 flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-ink-muted">
-              <PackageX className="h-3.5 w-3.5 text-sage" /> Product launch scorecard
+            <div className="mb-2 flex items-center gap-2 text-[12px] font-semibold uppercase tracking-wide text-ink-muted">
+              <BellRing className="h-3.5 w-3.5 text-sage" /> Back-in-stock recoverable
             </div>
-            <div className="space-y-3">
-              {LAUNCHES.map((l) => (
-                <div key={l.name} className="rounded-xl border border-border bg-surface p-3">
+            <div className="tabular text-[26px] font-semibold leading-none text-sage-deep">{compactCurrency(waitlistRecoverable)}</div>
+            <p className="mt-1 text-[11.5px] text-ink-muted">within ~30 days if replenishment is prioritized</p>
+            <div className="mt-3 space-y-2">
+              {waitlistDemand.slice(0, 3).map((w) => (
+                <div key={w.waitlistId} className="rounded-lg border border-border bg-surface p-2.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-[13px] font-semibold text-ink">{l.name}</span>
-                    <span className={`tabular text-[13px] font-semibold ${l.vsPlan >= 0 ? "text-positive" : "text-negative"}`}>{l.vsPlan >= 0 ? "+" : ""}{l.vsPlan}% vs plan</span>
+                    <span className="text-[12.5px] font-medium text-ink">{w.productName}</span>
+                    <span className="tabular text-[12px] font-semibold text-sage-deep">{compactCurrency(w.expectedRecoveryRevenue)}</span>
                   </div>
-                  <p className="mt-1 text-[12px] leading-snug text-ink-secondary">{l.read}</p>
-                  <Badge tone={l.status === "Ahead of Plan" ? "positive" : l.status === "Watch" ? "warning" : "sage"} className="mt-2">{l.status}</Badge>
+                  <div className="text-[11px] text-ink-muted">{w.market} · {w.size} · {w.waitlistSignups.toLocaleString()} waitlisted</div>
                 </div>
               ))}
             </div>
-            <p className="mt-3 text-[11px] text-ink-muted">Early-read model compares first weeks of sell-through to comparable launch curves.</p>
           </CardContent>
         </Card>
       </div>
+
+      <MerchOpsSection />
     </div>
   );
+}
+
+// ── Back-in-Stock, Returns/Fit, Launches & PDP Quality (progressive disclosure)
+function MerchOpsSection() {
+  const [tab, setTab] = useState("returns");
+  const totalRecoverable = waitlistRecoverable;
+  const joggerRecoverable = waitlistDemand
+    .filter((w) => w.productName === "Sunday Performance Jogger")
+    .reduce((s, w) => s + w.expectedRecoveryRevenue, 0);
+  const totalPreventable = returnsFitData.reduce((s, r) => s + r.preventableReturnEstimate, 0);
+
+  return (
+    <Card>
+      <CardContent className="pt-5">
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <SectionHeader question="How do we protect margin and recover demand across the assortment?" hint="Returns & fit, back-in-stock demand, launch reads, and digital-shelf quality." className="mb-0" />
+          <Tabs
+            value={tab}
+            onChange={setTab}
+            items={[
+              { value: "returns", label: "Returns & Fit", icon: Ruler },
+              { value: "waitlist", label: "Back-in-Stock", icon: BellRing },
+              { value: "launches", label: "Launches", icon: Boxes },
+              { value: "pdp", label: "PDP Quality", icon: Monitor },
+            ]}
+          />
+        </div>
+
+        {tab === "returns" && (
+          <div>
+            <div className="mb-3 rounded-lg bg-clay-soft/40 p-3 text-[12.5px] leading-relaxed text-ink-secondary">
+              <span className="font-medium text-ink">Insight — </span>Daily Legging has strong conversion but an elevated return rate among first-time Studio Minimalist customers. Size-guide interaction reduces return probability by ~18%. Prioritize fit guidance and review snippets on PDP for new visitors. <span className="text-ink-muted">~{compactCurrency(totalPreventable)} of returns look preventable.</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="border-b border-border text-left text-[11px] uppercase tracking-wide text-ink-muted">
+                    <th className="py-2 pr-3 font-medium">Style</th>
+                    <th className="py-2 pr-3 text-right font-medium">Return rate</th>
+                    <th className="py-2 pr-3 font-medium">Top reason</th>
+                    <th className="py-2 pr-3 font-medium">Exchange</th>
+                    <th className="py-2 pr-3 font-medium">Fit risk</th>
+                    <th className="py-2 pr-3 text-right font-medium">Return-adj. GP</th>
+                    <th className="py-2 pl-3 font-medium">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {returnsFitData.map((r) => (
+                    <tr key={r.productId} className="border-b border-border/60 align-top hover:bg-surface-2/40">
+                      <td className="py-2.5 pr-3 font-medium text-ink">{r.productName}</td>
+                      <td className="tabular py-2.5 pr-3 text-right"><span className={r.returnRate > 0.12 ? "font-semibold text-negative" : "text-ink-secondary"}>{percent(r.returnRate, 0)}</span></td>
+                      <td className="py-2.5 pr-3 text-ink-secondary">{r.topReason}</td>
+                      <td className="py-2.5 pr-3"><Badge tone={r.sizeExchangeDirection === "Up" ? "warning" : r.sizeExchangeDirection === "Down" ? "ocean" : "neutral"}>{r.sizeExchangeDirection === "Balanced" ? "Balanced" : `Size ${r.sizeExchangeDirection.toLowerCase()}`}</Badge></td>
+                      <td className="py-2.5 pr-3">
+                        <div className="flex items-center gap-2">
+                          <Progress value={r.fitRiskScore} tone={r.fitRiskScore > 60 ? "negative" : r.fitRiskScore > 40 ? "warning" : "positive"} className="w-12" />
+                          <span className="tabular text-[12px] text-ink-secondary">{r.fitRiskScore}</span>
+                        </div>
+                      </td>
+                      <td className="tabular py-2.5 pr-3 text-right font-semibold text-ink">{compactCurrency(r.returnAdjustedGrossProfit)}</td>
+                      <td className="py-2.5 pl-3 text-[12px] text-ink-secondary">{r.recommendedAction}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {tab === "waitlist" && (
+          <div>
+            <div className="mb-3 rounded-lg bg-sage-soft/40 p-3 text-[12.5px] leading-relaxed text-ink-secondary">
+              <span className="font-medium text-ink">Insight — </span>Men's M/L in Sunday Performance Jogger is suppressing Denver and Salt Lake City revenue — back-in-stock demand suggests <span className="font-semibold text-sage-deep">~{compactCurrency(joggerRecoverable)}</span> recoverable on that style alone if replenishment is prioritized and lifecycle messaging launches within 24 hours of availability. Across the full waitlist, ~{compactCurrency(totalRecoverable)} looks recoverable within 30 days.
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="border-b border-border text-left text-[11px] uppercase tracking-wide text-ink-muted">
+                    <th className="py-2 pr-3 font-medium">Style · Market · Size</th>
+                    <th className="py-2 pr-3 text-right font-medium">Waitlist</th>
+                    <th className="py-2 pr-3 text-right font-medium">Lost rev.</th>
+                    <th className="py-2 pr-3 text-right font-medium">Recoverable</th>
+                    <th className="py-2 pr-3 font-medium">Priority</th>
+                    <th className="py-2 pl-3 font-medium">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {waitlistDemand.map((w) => (
+                    <tr key={w.waitlistId} className="border-b border-border/60 align-top hover:bg-surface-2/40">
+                      <td className="py-2.5 pr-3">
+                        <span className="font-medium text-ink">{w.productName}</span>
+                        <span className="ml-1.5 text-[11px] text-ink-muted">{w.market} · {w.size}</span>
+                      </td>
+                      <td className="tabular py-2.5 pr-3 text-right text-ink-secondary">{w.waitlistSignups.toLocaleString()}</td>
+                      <td className="tabular py-2.5 pr-3 text-right text-negative">{compactCurrency(w.estimatedLostRevenue)}</td>
+                      <td className="tabular py-2.5 pr-3 text-right font-semibold text-sage-deep">{compactCurrency(w.expectedRecoveryRevenue)}</td>
+                      <td className="py-2.5 pr-3"><div className="flex items-center gap-2"><Progress value={w.priorityScore} tone={w.priorityScore > 70 ? "negative" : "warning"} className="w-12" /><span className="tabular text-[12px] text-ink-secondary">{w.priorityScore}</span></div></td>
+                      <td className="py-2.5 pl-3 text-[12px] text-ink-secondary">{w.recommendedAction}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {tab === "launches" && (
+          <div className="grid gap-4 lg:grid-cols-2">
+            {productLaunches.map((l) => (
+              <div key={l.launchId} className="rounded-xl border border-border bg-surface p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-[14px] font-semibold text-ink">{l.launchName}</div>
+                    <div className="text-[11px] text-ink-muted">{l.primaryPersona} · {l.topMarkets.join(", ")}</div>
+                  </div>
+                  <span className={`tabular text-[14px] font-semibold ${l.actualRevenue >= l.forecastRevenue ? "text-positive" : "text-negative"}`}>
+                    {signed(round1((l.actualRevenue / l.forecastRevenue - 1) * 100))}% vs plan
+                  </span>
+                </div>
+                <div className="mt-2 grid grid-cols-3 gap-2 text-center">
+                  <Mini label="New cust." value={percentRaw(l.newCustomerContribution * 100, 0)} />
+                  <Mini label="Sell-through" value={percentRaw(l.sellThroughRate * 100, 0)} />
+                  <Mini label="Quality" value={String(l.customerQualityScore)} />
+                </div>
+                <ResponsiveContainer width="100%" height={88}>
+                  <LineChart data={l.sellThroughCurve} margin={{ top: 8, right: 4, left: 4, bottom: 0 }}>
+                    <XAxis dataKey="week" hide />
+                    <YAxis hide domain={[0, 100]} />
+                    <Tooltip cursor={false} content={({ active, payload }) => active && payload?.length ? <TooltipShell rows={[{ label: "Planned", value: `${(payload[0].payload as { planned: number }).planned}%`, color: CHART.muted }, { label: "Actual", value: `${(payload[0].payload as { actual: number }).actual}%`, color: CHART.sage }]} /> : null} />
+                    <Line dataKey="planned" stroke={CHART.muted} strokeWidth={1.5} strokeDasharray="4 3" dot={false} />
+                    <Line dataKey="actual" stroke={CHART.sage} strokeWidth={2} dot={false} />
+                  </LineChart>
+                </ResponsiveContainer>
+                <div className="mt-1 flex items-center justify-between">
+                  <Badge tone={l.inventoryRisk === "High" ? "negative" : l.inventoryRisk === "Medium" ? "warning" : "positive"}>{l.inventoryRisk} inventory risk</Badge>
+                  <span className="text-[11px] text-ink-muted">{l.forecastAccuracy}% accuracy</span>
+                </div>
+                <p className="mt-2 text-[12px] leading-snug text-ink-secondary"><span className="font-medium text-ink">Action — </span>{l.recommendedAction}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {tab === "pdp" && (
+          <div>
+            <div className="mb-3 rounded-lg bg-ocean-soft/40 p-3 text-[12.5px] leading-relaxed text-ink-secondary">
+              <span className="font-medium text-ink">Insight — </span>Meta Pant has high traffic but a PDP Quality Score below the category benchmark, driven by fit uncertainty and limited visual merchandising for work-to-weekend use cases. Test commuter-focused PDP content.
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-[13px]">
+                <thead>
+                  <tr className="border-b border-border text-left text-[11px] uppercase tracking-wide text-ink-muted">
+                    <th className="py-2 pr-3 font-medium">Style</th>
+                    <th className="py-2 pr-3 font-medium">PDP score</th>
+                    <th className="py-2 pr-3 text-right font-medium">Fit clarity</th>
+                    <th className="py-2 pr-3 text-center font-medium">Video</th>
+                    <th className="py-2 pr-3 text-right font-medium">Reviews</th>
+                    <th className="py-2 pr-3 text-right font-medium">Rev. opp.</th>
+                    <th className="py-2 pl-3 font-medium">Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pdpQuality.map((p) => (
+                    <tr key={p.productId} className="border-b border-border/60 align-top hover:bg-surface-2/40">
+                      <td className="py-2.5 pr-3 font-medium text-ink">{p.productName}</td>
+                      <td className="py-2.5 pr-3"><div className="flex items-center gap-2"><Progress value={p.pdpQualityScore} tone={p.pdpQualityScore >= 80 ? "positive" : p.pdpQualityScore >= 70 ? "sage" : "warning"} className="w-14" /><span className="tabular text-[12px] font-semibold text-ink">{p.pdpQualityScore}</span></div></td>
+                      <td className="tabular py-2.5 pr-3 text-right text-ink-secondary">{p.fitClarityScore}</td>
+                      <td className="py-2.5 pr-3 text-center">{p.videoAvailable ? <span className="text-positive">✓</span> : <span className="text-ink-muted">—</span>}</td>
+                      <td className="tabular py-2.5 pr-3 text-right text-ink-secondary">{p.reviewCount.toLocaleString()} · {p.reviewRating}</td>
+                      <td className="tabular py-2.5 pr-3 text-right font-semibold text-sage-deep">{compactCurrency(p.revenueOpportunity)}</td>
+                      <td className="py-2.5 pl-3 text-[12px] text-ink-secondary">{p.recommendedAction}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function Mini({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-surface-2/50 p-1.5">
+      <div className="text-[10px] uppercase tracking-wide text-ink-muted">{label}</div>
+      <div className="tabular text-[13px] font-semibold text-ink">{value}</div>
+    </div>
+  );
+}
+
+function round1(n: number): number {
+  return Math.round(n * 10) / 10;
 }
