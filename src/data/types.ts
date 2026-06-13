@@ -477,3 +477,86 @@ export interface GrowthInitiative {
   stage: "Now" | "Next" | "Later";
   status: Status;
 }
+
+// ── Community Commerce (creators, ambassadors, affiliates, activations) ──────
+
+export type PartnerType =
+  | "Creator"
+  | "Ambassador"
+  | "Affiliate"
+  | "Local Partner"
+  | "Run Club"
+  | "Recovery Studio";
+
+export type PartnerStatus = "Top Performer" | "Active" | "In Test" | "Proposed" | "Paused";
+
+export interface CreatorPartner {
+  partnerId: string;
+  name: string;
+  partnerType: PartnerType;
+  market: string;
+  primaryPersona: PersonaName;
+  audienceSize: number;
+  engagementRate: number; // 0..1
+  brandFitScore: number; // 0..100
+  personaFitScore: number; // 0..100
+  commissionRate: number; // 0..1
+  contentType: string;
+  eventAssociated: string;
+  status: PartnerStatus;
+  // Derived performance
+  attributedRevenue: number;
+  newCustomers: number;
+  incrementalRevenue: number;
+  roi: number;
+}
+
+export interface ActivationLandingPage {
+  landingPageId: string;
+  name: string;
+  market: string;
+  partnerId: string;
+  eventId: string;
+  urlSlug: string;
+  heroMessage: string;
+  featuredProducts: string[];
+  targetPersonas: PersonaName[];
+  qrCodeId: string;
+  utmCampaign: string;
+  sessions: number;
+  qrScans: number;
+  emailCaptures: number;
+  smsCaptures: number;
+  productViews: number;
+  addToCart: number;
+  orders: number;
+  revenue: number;
+  newCustomers: number;
+  repeatCustomers: number;
+  grossMargin: number;
+  commissionPayout: number;
+  marginAfterCommission: number;
+  returnRate: number;
+  haloRevenue30d: number;
+  haloRevenue60d: number;
+  haloRevenue90d: number;
+  incrementalRevenueEstimate: number;
+  cannibalizedRevenueEstimate: number;
+  // Derived display
+  roi: number;
+  confidence: number;
+}
+
+export interface CommissionScenario {
+  scenarioId: string;
+  model: string;
+  commissionRate: number; // 0..1
+  newCustomerBonus: number; // $ per new customer
+  leadBonus: number; // $ per lead
+  revenue: number;
+  marginAfterCommission: number;
+  creatorPayout: number;
+  newCustomers: number;
+  projectedLtv: number;
+  recommendation: string;
+}

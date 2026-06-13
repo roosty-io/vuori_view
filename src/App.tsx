@@ -6,6 +6,7 @@ import { ForecastStudio } from "./pages/ForecastStudio";
 import { ConsumerIntelligence } from "./pages/ConsumerIntelligence";
 import { MarketOpportunity } from "./pages/MarketOpportunity";
 import { EventSimulator } from "./pages/EventSimulator";
+import { CommunityCommerceLab } from "./pages/CommunityCommerceLab";
 import { Localization } from "./pages/Localization";
 import { RightMessage } from "./pages/RightMessage";
 import { MarketingEfficiency } from "./pages/MarketingEfficiency";
@@ -28,6 +29,7 @@ export function App() {
             <Route path="/consumer-intelligence" element={<ConsumerIntelligence />} />
             <Route path="/market-opportunity" element={<MarketOpportunity />} />
             <Route path="/event-simulator" element={<EventSimulator />} />
+            <Route path="/community-commerce" element={<CommunityCommerceLab />} />
             <Route path="/localization" element={<Localization />} />
             <Route path="/right-message" element={<RightMessage />} />
             <Route path="/marketing-efficiency" element={<MarketingEfficiency />} />

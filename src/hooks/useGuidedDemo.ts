@@ -51,6 +51,14 @@ export const GUIDED_STEPS: GuidedStep[] = [
     takeaway: "The event is the spark; the ecommerce halo is the real prize.",
   },
   {
+    title: "Routing offline activation into measurable on-site sales",
+    page: "/community-commerce",
+    pageName: "Community Commerce Lab",
+    narrative:
+      "The Austin activation routes QR scans and creator links to a curated on-site landing page (/austin-run-club), letting Vuori measure offline-to-online sales, new-customer capture, commission efficiency, and 90-day ecommerce halo.",
+    takeaway: "Creators and events become attributable, incremental DTC revenue.",
+  },
+  {
     title: "Right message, right moment",
     page: "/right-message",
     pageName: "Right Message, Right Moment",

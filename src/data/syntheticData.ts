@@ -9,10 +9,13 @@
 
 import { Rng, clamp, round } from "./seed";
 import type {
+  ActivationLandingPage,
   AiUseCase,
   ChannelSummary,
   CohortRow,
+  CommissionScenario,
   Competitor,
+  CreatorPartner,
   DailyMetric,
   EventRow,
   EventType,
@@ -21,6 +24,8 @@ import type {
   GrowthInitiative,
   InventoryRow,
   MarketSignal,
+  PartnerStatus,
+  PartnerType,
   Persona,
   PersonaName,
   Product,
@@ -1341,3 +1346,218 @@ export const climateByMarket: Record<string, { season: string; demand: string }>
   Seattle: { season: "Wet, mild; layering year-round", demand: "Layers, outerwear, commuter" },
   Chicago: { season: "Cold winter, warm summer", demand: "Layers, commuter, shorts" },
 };
+
+// ───────────────────────────────────────────────────────────────────────────
+// COMMUNITY COMMERCE — creators, ambassadors, affiliates, activation pages
+// ───────────────────────────────────────────────────────────────────────────
+interface CreatorSeed {
+  name: string;
+  type: PartnerType;
+  market: string;
+  persona: PersonaName;
+  audience: number;
+  engagement: number;
+  brandFit: number;
+  commission: number;
+  content: string;
+  event: string;
+  status: PartnerStatus;
+}
+
+const CREATOR_SEEDS: CreatorSeed[] = [
+  { name: "Austin Run Collective", type: "Run Club", market: "Austin", persona: "Performance Commuter", audience: 28000, engagement: 0.085, brandFit: 94, commission: 0.1, content: "Group runs + sunrise miles", event: "Austin Run Club + Recovery", status: "Top Performer" },
+  { name: "Eastside Recovery Studio", type: "Recovery Studio", market: "Austin", persona: "Trail & Recovery", audience: 16000, engagement: 0.072, brandFit: 91, commission: 0.1, content: "Recovery + mobility sessions", event: "Austin Run Club + Recovery", status: "Active" },
+  { name: "Maya Render", type: "Creator", market: "Austin", persona: "Wellness Socialite", audience: 320000, engagement: 0.054, brandFit: 88, commission: 0.14, content: "Wellness + community reels", event: "Austin Run Club + Recovery", status: "Active" },
+  { name: "Trailhead Co.", type: "Local Partner", market: "Denver", persona: "Trail & Recovery", audience: 42000, engagement: 0.061, brandFit: 89, commission: 0.11, content: "Trail meetups + vlogs", event: "Denver Trail Series", status: "Active" },
+  { name: "Jordan Vale", type: "Ambassador", market: "Boston", persona: "Performance Commuter", audience: 95000, engagement: 0.048, brandFit: 85, commission: 0.12, content: "Commuter style + run", event: "Boston Studio Takeover", status: "In Test" },
+  { name: "Coast & Current", type: "Creator", market: "Miami", persona: "Coastal Active", audience: 540000, engagement: 0.039, brandFit: 82, commission: 0.15, content: "Surf + coastal lifestyle", event: "Miami Coastal Activation", status: "Active" },
+  { name: "Sol Pilates", type: "Recovery Studio", market: "Los Angeles", persona: "Studio Minimalist", audience: 24000, engagement: 0.07, brandFit: 90, commission: 0.1, content: "Pilates flows + sets", event: "LA Flagship Preview", status: "Active" },
+  { name: "The Weekend Edit", type: "Affiliate", market: "New York", persona: "Travel Weekender", audience: 180000, engagement: 0.032, brandFit: 80, commission: 0.16, content: "Affiliate edits + travel", event: "—", status: "Active" },
+  { name: "Nashville Run Society", type: "Run Club", market: "Nashville", persona: "Wellness Socialite", audience: 19000, engagement: 0.079, brandFit: 87, commission: 0.1, content: "Run + community events", event: "Nashville Community Night", status: "Proposed" },
+  { name: "Peak & Powder", type: "Local Partner", market: "Salt Lake City", persona: "Trail & Recovery", audience: 33000, engagement: 0.058, brandFit: 86, commission: 0.11, content: "Ski + recovery content", event: "SLC Recovery Pop-Up", status: "Proposed" },
+  { name: "Dadbod Daily", type: "Creator", market: "Chicago", persona: "Modern Dad Uniform", audience: 410000, engagement: 0.036, brandFit: 78, commission: 0.15, content: "Everyday menswear", event: "—", status: "In Test" },
+  { name: "Studio Form", type: "Recovery Studio", market: "Seattle", persona: "Studio Minimalist", audience: 21000, engagement: 0.066, brandFit: 84, commission: 0.1, content: "Mobility + studio sets", event: "Seattle Pop-Up", status: "Proposed" },
+];
+
+function buildCreators(): CreatorPartner[] {
+  const cr = new Rng("creators");
+  return CREATOR_SEEDS.map((c, i) => {
+    const reach = c.audience * c.engagement;
+    const attributedRevenue = Math.round(reach * cr.range(0.14, 0.24) * 142 * (c.brandFit / 85));
+    const newCustomers = Math.round(attributedRevenue / cr.range(165, 215));
+    // Local, high-fit partners convert more incrementally than broad affiliates.
+    const incRate = clamp(0.5 + (c.brandFit - 80) * 0.012 + (c.type === "Affiliate" ? -0.12 : c.type === "Creator" ? -0.04 : 0.08), 0.4, 0.82);
+    const incrementalRevenue = Math.round(attributedRevenue * incRate);
+    const payout = attributedRevenue * c.commission + 3500;
+    const roi = round(attributedRevenue / payout, 2);
+    return {
+      partnerId: `CP-${String(i + 1).padStart(3, "0")}`,
+      name: c.name,
+      partnerType: c.type,
+      market: c.market,
+      primaryPersona: c.persona,
+      audienceSize: c.audience,
+      engagementRate: c.engagement,
+      brandFitScore: c.brandFit,
+      personaFitScore: round(clamp(c.brandFit + cr.normal(0, 3), 60, 98), 0),
+      commissionRate: c.commission,
+      contentType: c.content,
+      eventAssociated: c.event,
+      status: c.status,
+      attributedRevenue,
+      newCustomers,
+      incrementalRevenue,
+      roi,
+    } satisfies CreatorPartner;
+  });
+}
+export const creatorPartners = buildCreators();
+
+// Persona → creator fit matrix (0..100)
+export function personaCreatorMatrix(): { creator: string; primaryPersona: PersonaName; values: Record<string, number> }[] {
+  return CREATOR_SEEDS.map((c) => {
+    const mr = new Rng("pcreator-" + c.name);
+    const values: Record<string, number> = {};
+    personaNames.forEach((pn) => {
+      let v = 22 + mr.normal(0, 8);
+      if (pn === c.persona) v = 86 + mr.normal(0, 4);
+      else if (RELATED_PERSONAS[c.persona]?.includes(pn)) v = 54 + mr.normal(0, 8);
+      values[pn] = round(clamp(v, 8, 96), 0);
+    });
+    return { creator: c.name, primaryPersona: c.persona, values };
+  });
+}
+
+const RELATED_PERSONAS: Partial<Record<PersonaName, PersonaName[]>> = {
+  "Performance Commuter": ["Modern Dad Uniform", "Premium Basics Loyalist", "Trail & Recovery"],
+  "Trail & Recovery": ["Performance Commuter", "Modern Dad Uniform"],
+  "Wellness Socialite": ["Studio Minimalist", "Coastal Active"],
+  "Coastal Active": ["Travel Weekender", "Wellness Socialite"],
+  "Studio Minimalist": ["Wellness Socialite", "Premium Basics Loyalist"],
+  "Travel Weekender": ["Coastal Active", "Premium Basics Loyalist"],
+  "Modern Dad Uniform": ["Performance Commuter", "Premium Basics Loyalist"],
+};
+
+interface LandingSeed {
+  name: string;
+  market: string;
+  partnerId: string;
+  eventId: string;
+  slug: string;
+  hero: string;
+  featured: string[];
+  personas: PersonaName[];
+  utm: string;
+  scale: number;
+  commission: number;
+}
+
+const LANDING_SEEDS: LandingSeed[] = [
+  { name: "Denver Trail Series", market: "Denver", partnerId: "CP-004", eventId: "EV-002", slug: "/denver-trail", hero: "Made for the climb, the descent, and the recovery after.", featured: ["Sunday Performance Jogger", "Canyon Insulated Jacket", "Restore Half Zip", "Meta Pant"], personas: ["Trail & Recovery", "Performance Commuter", "Modern Dad Uniform"], utm: "den_trail_q3", scale: 0.46, commission: 0.11 },
+  { name: "Miami Coastal Activation", market: "Miami", partnerId: "CP-006", eventId: "EV-003", slug: "/miami-coastal", hero: "Sun, salt, and everything in motion.", featured: ["Coastal Training Tank", "Kore Short", "Villa Wideleg", "Strato Tech Tee"], personas: ["Coastal Active", "Travel Weekender", "Wellness Socialite"], utm: "mia_coastal_q3", scale: 0.4, commission: 0.15 },
+  { name: "Boston Studio Takeover", market: "Boston", partnerId: "CP-005", eventId: "EV-004", slug: "/boston-studio", hero: "From the commute to the mat to the meeting.", featured: ["Meta Pant", "Transit Commuter Shirt", "Daily Legging", "Restore Half Zip"], personas: ["Performance Commuter", "Premium Basics Loyalist", "Studio Minimalist"], utm: "bos_studio_q3", scale: 0.38, commission: 0.12 },
+  { name: "LA Flagship Preview", market: "Los Angeles", partnerId: "CP-007", eventId: "EV-006", slug: "/la-flagship", hero: "A first look, styled for the coast.", featured: ["Daily Legging", "Villa Wideleg", "DreamKnit Layer", "Coastal Training Tank"], personas: ["Studio Minimalist", "Coastal Active", "Wellness Socialite"], utm: "la_flagship_q3", scale: 0.52, commission: 0.1 },
+  { name: "Nashville Community Night", market: "Nashville", partnerId: "CP-009", eventId: "EV-005", slug: "/nashville-night", hero: "Run together. Recover together. Stay a while.", featured: ["Daily Legging", "Halo Essential Hoodie", "Coastal Training Tank", "Sunday Performance Jogger"], personas: ["Wellness Socialite", "Performance Commuter", "Travel Weekender"], utm: "nsh_night_q3", scale: 0.3, commission: 0.1 },
+  { name: "NY Weekend Edit", market: "New York", partnerId: "CP-008", eventId: "—", slug: "/ny-weekend", hero: "From the gate to the table — your weekend edit.", featured: ["Villa Wideleg", "Halo Essential Hoodie", "DreamKnit Layer", "Transit Commuter Shirt"], personas: ["Travel Weekender", "Premium Basics Loyalist", "Performance Commuter"], utm: "ny_weekend_q3", scale: 0.5, commission: 0.16 },
+];
+
+function buildLandingPages(): ActivationLandingPage[] {
+  const austinPage: ActivationLandingPage = {
+    landingPageId: "LP-001",
+    name: "Austin Run Club + Recovery Studio",
+    market: "Austin",
+    partnerId: "CP-001",
+    eventId: "EV-001",
+    urlSlug: "/austin-run-club",
+    heroMessage: "Built for sunrise miles, recovery hangs, and everything after.",
+    featuredProducts: ["Kore Short", "Strato Tech Tee", "Sunday Performance Jogger", "Transit Commuter Shirt", "Restore Half Zip"],
+    targetPersonas: ["Performance Commuter", "Wellness Socialite", "Trail & Recovery"],
+    qrCodeId: "QR-ATX-001",
+    utmCampaign: "atx_runclub_q3",
+    sessions: 4900,
+    qrScans: 8400,
+    emailCaptures: 2100,
+    smsCaptures: 800,
+    productViews: 3050,
+    addToCart: 1740,
+    orders: 1216,
+    revenue: 180000,
+    newCustomers: 920,
+    repeatCustomers: 296,
+    grossMargin: 105300,
+    commissionPayout: 21600,
+    marginAfterCommission: 83700,
+    returnRate: 0.09,
+    haloRevenue30d: 235200,
+    haloRevenue60d: 414400,
+    haloRevenue90d: 560000,
+    incrementalRevenueEstimate: 540000,
+    cannibalizedRevenueEstimate: 200000,
+    roi: 3.7,
+    confidence: 84,
+  };
+
+  const others = LANDING_SEEDS.map((s, i) => {
+    const lr = new Rng("landing-" + s.slug);
+    const qrScans = Math.round(8400 * s.scale * lr.range(0.92, 1.08));
+    const sessions = Math.round(qrScans * lr.range(0.5, 0.62));
+    const productViews = Math.round(sessions * 0.62);
+    const addToCart = Math.round(productViews * lr.range(0.5, 0.6));
+    const orders = Math.round(addToCart * lr.range(0.4, 0.46));
+    const aov = lr.range(140, 156);
+    const revenue = Math.round(orders * aov);
+    const leads = Math.round(sessions * lr.range(0.5, 0.62));
+    const emailCaptures = Math.round(leads * 0.72);
+    const smsCaptures = leads - emailCaptures;
+    const newCustomers = Math.round(orders * lr.range(0.58, 0.66));
+    const repeatCustomers = Math.round(orders * lr.range(0.26, 0.34));
+    const grossMargin = Math.round(revenue * 0.585);
+    const commissionPayout = Math.round(revenue * s.commission);
+    const halo90 = Math.round(revenue * lr.range(2.6, 3.3));
+    return {
+      landingPageId: `LP-${String(i + 2).padStart(3, "0")}`,
+      name: s.name,
+      market: s.market,
+      partnerId: s.partnerId,
+      eventId: s.eventId,
+      urlSlug: s.slug,
+      heroMessage: s.hero,
+      featuredProducts: s.featured,
+      targetPersonas: s.personas,
+      qrCodeId: `QR-${s.market.slice(0, 3).toUpperCase()}-${String(i + 2).padStart(3, "0")}`,
+      utmCampaign: s.utm,
+      sessions,
+      qrScans,
+      emailCaptures,
+      smsCaptures,
+      productViews,
+      addToCart,
+      orders,
+      revenue,
+      newCustomers,
+      repeatCustomers,
+      grossMargin,
+      commissionPayout,
+      marginAfterCommission: grossMargin - commissionPayout,
+      returnRate: round(lr.range(0.07, 0.12), 2),
+      haloRevenue30d: Math.round(halo90 * 0.42),
+      haloRevenue60d: Math.round(halo90 * 0.74),
+      haloRevenue90d: halo90,
+      incrementalRevenueEstimate: Math.round((revenue + halo90) * lr.range(0.7, 0.77)),
+      cannibalizedRevenueEstimate: Math.round((revenue + halo90) * lr.range(0.14, 0.2)),
+      roi: round((revenue + halo90) / (commissionPayout + revenue * 0.55), 2),
+      confidence: round(lr.range(68, 82), 0),
+    } satisfies ActivationLandingPage;
+  });
+
+  return [austinPage, ...others];
+}
+export const activationLandingPages = buildLandingPages();
+
+export const commissionScenarios: CommissionScenario[] = [
+  { scenarioId: "CM-1", model: "Flat 10%", commissionRate: 0.1, newCustomerBonus: 0, leadBonus: 0, revenue: 176000, marginAfterCommission: 85360, creatorPayout: 17600, newCustomers: 840, projectedLtv: 401520, recommendation: "Margin-safe baseline" },
+  { scenarioId: "CM-2", model: "Flat 15%", commissionRate: 0.15, newCustomerBonus: 0, leadBonus: 0, revenue: 194000, marginAfterCommission: 84390, creatorPayout: 29100, newCustomers: 1010, projectedLtv: 482780, recommendation: "Higher reach, lower margin" },
+  { scenarioId: "CM-3", model: "New-customer bonus (8% + $20)", commissionRate: 0.08, newCustomerBonus: 20, leadBonus: 0, revenue: 186000, marginAfterCommission: 73130, creatorPayout: 35680, newCustomers: 1040, projectedLtv: 497120, recommendation: "Best for acquisition" },
+  { scenarioId: "CM-4", model: "Lead + sale hybrid (10% + $3/lead)", commissionRate: 0.1, newCustomerBonus: 0, leadBonus: 3, revenue: 184000, marginAfterCommission: 79940, creatorPayout: 27700, newCustomers: 940, projectedLtv: 449320, recommendation: "Captures first-party leads" },
+  { scenarioId: "CM-5", model: "Return-adjusted 12%", commissionRate: 0.12, newCustomerBonus: 0, leadBonus: 0, revenue: 182000, marginAfterCommission: 86596, creatorPayout: 19874, newCustomers: 910, projectedLtv: 434980, recommendation: "Recommended — protects margin" },
+];

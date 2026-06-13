@@ -27,18 +27,19 @@ The built-in **Guided Demo** walks through one connected storyline:
 
 > **"Austin is emerging as Vuori's next high-opportunity localized growth market."**
 
-It moves across eight pages — Command Center → External Demand Radar → Market Opportunity Engine → Consumer Intelligence Graph → Pop-Up & Event Simulator → Right Message, Right Moment → AI Opportunity Registry → Executive Brief — with the page behind the panel updating at each step. Austin scores **91** on the opportunity model, and a simulated run-club + recovery-studio activation projects **~$184K** event-period revenue, a **~$534K** 90-day ecommerce halo, **~2,900** leads, and a **~3.7x** ROI at **84%** confidence.
+It moves across nine pages — Command Center → External Demand Radar → Market Opportunity Engine → Consumer Intelligence Graph → Pop-Up & Event Simulator → Community Commerce Lab → Right Message, Right Moment → AI Opportunity Registry → Executive Brief — with the page behind the panel updating at each step. Austin scores **91** on the opportunity model, and a simulated run-club + recovery-studio activation projects **~$184K** event-period revenue, a **~$534K** 90-day ecommerce halo, **~2,900** leads, and a **~3.7x** ROI at **84%** confidence — then routes its QR scans and creator links into a curated on-site `/austin-run-club` landing page for fully attributable, incremental DTC sales.
 
 ---
 
 ## Key features
 
-- **15 pages** spanning performance, customer & market intelligence, activation, product, AI/strategy, and executive output.
+- **16 pages** spanning performance, customer & market intelligence, activation, product, AI/strategy, and executive output.
 - **Command Center** — KPI deck, actual-vs-forecast-vs-plan, revenue decomposition waterfall, new-vs-repeat mix, AI-assisted weekly readout, and prioritized opportunities & risks.
 - **Forecast Studio** — a driver-based scenario model with **working sliders** (paid media, conversion, AOV, email/SMS, promo, inventory, activation, launches, international), saved scenarios, confidence bands, and driver decomposition.
 - **Consumer Intelligence Graph** — 10 behavioral personas, a shared-product affinity network, persona × product/color heatmaps, LTV:CAC analysis, and live persona prediction for anonymous visitors.
 - **Market Opportunity Engine** — a transparent weighted opportunity score across 10 signals, a stylized market map, sortable ranking, and a demand-vs-competition bubble chart.
 - **Pop-Up & Event Simulator** — **working controls** that compute event ROI, lead capture, CAC, and 30/60/90-day halo, with activation-type comparison and a test design.
+- **Community Commerce Lab** — turns creators, ambassadors, affiliates, and local events into measurable on-site DTC sales via curated activation landing pages: QR-to-purchase funnel, storefront preview, creator/partner leaderboard, persona-to-creator fit matrix, incremental-vs-attributed revenue, a **commission strategy simulator**, and an affiliate/influencer compliance checklist.
 - **AI Opportunity Registry** — a sortable/filterable (TanStack Table) registry of 17 AI/ML use cases scored on impact, data readiness, confidence, time-to-value, and feasibility, plus an impact-vs-feasibility matrix.
 - **Growth Impact Lab** — internal-value scorecards and a Now / Next / Later roadmap (no external monetization).
 - **Executive Brief** — a print/export-friendly summary with recommendation, evidence, expected impact, confidence, risks, owners, and a 30/60/90-day plan. Use **Send to brief** across pages to assemble it.

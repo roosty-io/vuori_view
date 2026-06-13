@@ -13,6 +13,7 @@ import {
   Radar,
   Shirt,
   Sprout,
+  Store,
   TrendingUp,
   Users,
 } from "lucide-react";
@@ -51,6 +52,7 @@ export const NAV_GROUPS: NavGroup[] = [
     label: "Activation",
     items: [
       { path: "/event-simulator", label: "Pop-Up & Event Simulator", short: "Event Simulator", icon: CalendarRange, tier1: true },
+      { path: "/community-commerce", label: "Community Commerce Lab", short: "Community Commerce", icon: Store, tier1: true },
       { path: "/right-message", label: "Right Message, Right Moment", short: "Right Message", icon: MessageSquareText },
       { path: "/marketing-efficiency", label: "Marketing Efficiency Lab", short: "Marketing Efficiency", icon: Megaphone },
     ],

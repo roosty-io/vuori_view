@@ -115,6 +115,66 @@ export const PERSONA_SIGNAL_LABELS: { key: keyof PersonaSignalWeights; label: st
   { key: "eventRsvp", label: "Event RSVP" },
 ];
 
+// ── Commission strategy model (Community Commerce Lab) ──────────────────────
+export interface CommissionInputs {
+  baseRevenue: number;
+  baseNewCustomers: number;
+  baseLeads: number;
+  commissionRate: number; // 0..1
+  newCustomerBonus: number; // $ per new customer
+  leadBonus: number; // $ per lead
+  marginRate: number; // 0..1
+  returnRate: number; // 0..1
+  ltvPerCustomer: number;
+  returnAdjusted: boolean;
+}
+
+export interface CommissionOutputs {
+  revenue: number;
+  creatorPayout: number;
+  grossMargin: number;
+  marginAfterCommission: number;
+  marginAfterCommissionRate: number; // %
+  newCustomers: number;
+  leads: number;
+  projectedLtv: number;
+  effectiveCommissionRate: number; // %
+}
+
+/**
+ * Models a creator/affiliate commission structure. Richer incentives lift
+ * creator effort (more revenue & new customers) but compress margin per dollar.
+ */
+export function computeCommission(i: CommissionInputs): CommissionOutputs {
+  const incentiveRichness =
+    (i.commissionRate - 0.1) * 1.1 + i.newCustomerBonus * 0.0016 + i.leadBonus * 0.004;
+  const effortLift = clamp(incentiveRichness, -0.12, 0.3);
+
+  const revenue = Math.round(i.baseRevenue * (1 + effortLift));
+  const newCustomers = Math.round(i.baseNewCustomers * (1 + effortLift * 1.25));
+  const leads = Math.round(i.baseLeads * (1 + effortLift * 0.8));
+
+  const commissionableRevenue = i.returnAdjusted ? revenue * (1 - i.returnRate) : revenue;
+  const creatorPayout = Math.round(
+    commissionableRevenue * i.commissionRate + newCustomers * i.newCustomerBonus + leads * i.leadBonus,
+  );
+  const grossMargin = Math.round(revenue * i.marginRate);
+  const marginAfterCommission = grossMargin - creatorPayout;
+  const projectedLtv = Math.round(newCustomers * i.ltvPerCustomer);
+
+  return {
+    revenue,
+    creatorPayout,
+    grossMargin,
+    marginAfterCommission,
+    marginAfterCommissionRate: round((marginAfterCommission / revenue) * 100, 1),
+    newCustomers,
+    leads,
+    projectedLtv,
+    effectiveCommissionRate: round((creatorPayout / revenue) * 100, 1),
+  };
+}
+
 // ── AI use case priority (re-stated for the methodology panel) ──────────────
 export const AI_PRIORITY_FORMULA =
   "priorityScore = businessImpact·0.35 + dataReadiness·0.25 + confidence·0.20 + timeToValue·0.10 + feasibility·0.10";
@@ -128,6 +188,7 @@ export function statusTone(
     case "Ready to Scale":
     case "Data Ready":
     case "On Track":
+    case "Top Performer":
       return "positive";
     case "Watch":
     case "Needs Test":
@@ -140,9 +201,11 @@ export function statusTone(
       return "negative";
     case "Opportunity":
     case "Ready for POC":
+    case "Active":
       return "sage";
     case "Discovery":
     case "Needs Data":
+    case "Proposed":
       return "info";
     default:
       return "neutral";
